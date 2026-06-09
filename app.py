@@ -1,43 +1,48 @@
+# app.py
+
 import streamlit as st
 import pandas as pd
+import sqlite3
+from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
 from wordcloud import WordCloud
-import sqlite3
-from datetime import datetime
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch.nn.functional as F
 
-# ------------------ Page Config ------------------ #
-st.set_page_config(
-    page_title="YouTube Comment Sentiment Analyzer",
-    layout="wide"
-)
+# ----------------- Page Config & Style ----------------- #
+st.set_page_config(page_title="YouTube Sentiment Analyzer", layout="wide")
+st.markdown("""
+<style>
+.stApp { background-color: #FFF5F8; }
+.stButton>button { background-color: #A07DFE; color: white; font-weight: bold; }
+.stSidebar { background-color: #FDE2FF; }
+</style>
+""", unsafe_allow_html=True)
 
-# ------------------ Sidebar ------------------ #
-st.sidebar.markdown("## Dashboard")
+# ----------------- Sidebar ----------------- #
+st.sidebar.markdown("## Navigation")
 st.sidebar.button("Home")
 st.sidebar.button("History")
 st.sidebar.button("About")
 
-# ------------------ Title ------------------ #
-st.markdown("<h1 style='color: #6A0DAD;'>Sentiment Analysis</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color: #444;'>Analyze the sentiment of your text instantly</p>", unsafe_allow_html=True)
-
-# ------------------ Database ------------------ #
+# ----------------- Database ----------------- #
 conn = sqlite3.connect("history.db", check_same_thread=False)
 c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                text TEXT,
-                sentiment TEXT,
-                confidence REAL,
-                timestamp TEXT
-            )''')
+c.execute('''
+CREATE TABLE IF NOT EXISTS history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT,
+    aspect TEXT,
+    sentiment TEXT,
+    confidence REAL,
+    timestamp TEXT
+)
+''')
 conn.commit()
 
-# ------------------ Load mBERT ------------------ #
+# ----------------- Load mBERT ----------------- #
 @st.cache_resource
 def load_model():
     tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
@@ -49,9 +54,9 @@ def load_model():
 tokenizer, model, device = load_model()
 labels = ["negative","neutral","positive"]
 
-# ------------------ Functions ------------------ #
+# ----------------- Prediction Functions ----------------- #
 def predict_sentiment(texts):
-    results = []
+    results, confidences = [], []
     for text in texts:
         inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(device)
         with torch.no_grad():
@@ -59,65 +64,87 @@ def predict_sentiment(texts):
             probs = F.softmax(logits, dim=-1)
             pred_label = labels[torch.argmax(probs)]
             confidence = float(torch.max(probs))
-        results.append((pred_label, confidence))
-    return results
+        results.append(pred_label)
+        confidences.append(confidence)
+    return results, confidences
 
-def save_history(texts, sentiments, confidences):
+def save_history(texts, aspects, sentiments, confidences):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for text, sentiment, conf in zip(texts, sentiments, confidences):
-        c.execute('INSERT INTO history (text,sentiment,confidence,timestamp) VALUES (?,?,?,?)',
-                  (text, sentiment, conf, timestamp))
+    for text, aspect, sentiment, conf in zip(texts, aspects, sentiments, confidences):
+        c.execute('INSERT INTO history (text,aspect,sentiment,confidence,timestamp) VALUES (?,?,?,?,?)',
+                  (text, aspect, sentiment, conf, timestamp))
     conn.commit()
 
 def get_history():
     return pd.read_sql_query("SELECT * FROM history ORDER BY id DESC", conn)
 
-def plot_sentiment_bar(df):
+def plot_sentiment_distribution(df, title="Sentiment Distribution"):
     plt.figure(figsize=(6,3))
-    sns.countplot(x='sentiment', data=df, palette=['#FFB3BA','#BAFFC9','#BAE1FF'])
-    plt.title("Sentiment Distribution")
+    sns.countplot(x='sentiment', data=df, palette=['#FFB3BA','#BAE1FF','#BAFFC9'])
+    plt.title(title)
     st.pyplot(plt)
 
-def plot_wordcloud(df):
+def generate_wordcloud(df, title="WordCloud"):
     text = " ".join(df["text"].tolist())
     wc = WordCloud(width=800, height=400, background_color='white').generate(text)
     plt.figure(figsize=(10,5))
     plt.imshow(wc, interpolation='bilinear')
     plt.axis("off")
+    plt.title(title)
     st.pyplot(plt)
 
-# ------------------ Main Panel ------------------ #
-col1, col2 = st.columns([2,1])
+# ----------------- Main Interface ----------------- #
+tab1, tab2, tab3 = st.tabs(["Text/URL Input", "CSV Upload", "History"])
 
-with col1:
-    st.markdown("### Enter YouTube URL or Comment")
-    input_text = st.text_area("Enter text here:")
+# Tab 1: Single Input
+with tab1:
+    input_text = st.text_area("Enter YouTube comment or text:")
+    input_aspect = st.selectbox("Select Aspect", ["General","Cooking","Challenge","Education","Mukbang","QnA","Vlog"])
     if st.button("Analyze"):
         if input_text.strip() != "":
-            preds = predict_sentiment([input_text])
-            sentiment, confidence = preds[0]
-            save_history([input_text],[sentiment],[confidence])
-            
-            st.markdown(f"**Sentiment:** {sentiment.capitalize()}")
-            st.markdown(f"**Confidence:** {confidence:.2f}")
-            
-            df_display = pd.DataFrame({"text":[input_text],"sentiment":[sentiment],"confidence":[confidence]})
-            plot_sentiment_bar(df_display)
-            plot_wordcloud(df_display)
+            sentiments, confidences = predict_sentiment([input_text])
+            save_history([input_text],[input_aspect],sentiments,confidences)
+            df_result = pd.DataFrame({"text":[input_text], "aspect":[input_aspect],
+                                      "sentiment":sentiments, "confidence":confidences})
+            st.subheader("Result Card")
+            st.write(f"**Sentiment:** {sentiments[0].capitalize()} | **Confidence:** {confidences[0]:.2f}")
+            plot_sentiment_distribution(df_result, f"Sentiment - {input_aspect}")
+            generate_wordcloud(df_result, f"WordCloud - {input_aspect}")
         else:
-            st.warning("Please enter a comment or URL!")
+            st.warning("Please enter a comment!")
 
-with col2:
-    st.markdown("### Results Card")
-    history_df = get_history()
-    if not history_df.empty:
-        latest = history_df.iloc[0]
-        st.markdown(f"**Latest Analysis:**")
-        st.markdown(f"Text: {latest['text']}")
-        st.markdown(f"Sentiment: {latest['sentiment'].capitalize()}")
-        st.markdown(f"Confidence: {latest['confidence']:.2f}")
-        st.markdown(f"Timestamp: {latest['timestamp']}")
+# Tab 2: CSV Upload
+with tab2:
+    uploaded_file = st.file_uploader("Upload CSV (columns: text, optional aspect):", type=["csv"])
+    if uploaded_file:
+        df_csv = pd.read_csv(uploaded_file)
+        if df_csv.shape[1] == 1:
+            df_csv.columns = ["text"]
+            df_csv["aspect"] = "General"
+        else:
+            df_csv.columns = ["text","aspect"]
+        sentiments, confidences = predict_sentiment(df_csv["text"].tolist())
+        save_history(df_csv["text"].tolist(), df_csv["aspect"].tolist(), sentiments, confidences)
+        df_csv["sentiment"] = sentiments
+        df_csv["confidence"] = confidences
+        st.subheader("CSV Analysis Results")
+        st.dataframe(df_csv)
+        for aspect in df_csv["aspect"].unique():
+            df_aspect = df_csv[df_csv["aspect"]==aspect]
+            st.write(f"**Aspect:** {aspect}")
+            plot_sentiment_distribution(df_aspect, f"Sentiment - {aspect}")
+            generate_wordcloud(df_aspect, f"WordCloud - {aspect}")
 
-st.markdown("### Recent History")
-history_table = get_history()
-st.dataframe(history_table)
+# Tab 3: History
+with tab3:
+    df_history = get_history()
+    if not df_history.empty:
+        st.subheader("Recent History")
+        st.dataframe(df_history)
+        for aspect in df_history["aspect"].unique():
+            df_aspect = df_history[df_history["aspect"]==aspect]
+            st.write(f"**Aspect:** {aspect}")
+            plot_sentiment_distribution(df_aspect, f"Sentiment - {aspect}")
+            generate_wordcloud(df_aspect, f"WordCloud - {aspect}")
+    else:
+        st.info("No history available yet.")
