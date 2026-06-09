@@ -19,28 +19,6 @@ st.markdown("""
     .stApp { background-color: #f7f8fc; }
     #MainMenu, footer, header { visibility: hidden; }
 
-    /* Fix text colours */
-h1, h2, h3, h4, h5, h6,
-p, label, span, div {
-    color: #1f2937 !important;
-}
-
-/* Sidebar text */
-[data-testid="stSidebar"] * {
-    color: #1f2937 !important;
-}
-
-/* Text area */
-textarea {
-    background-color: white !important;
-    color: #1f2937 !important;
-}
-
-/* Warning messages */
-[data-testid="stAlert"] {
-    color: #1f2937 !important;
-}
-
     .metric-card {
         background: white;
         border-radius: 12px;
@@ -119,15 +97,11 @@ ASPECTS = {
         "method","step","process","easy","hard","difficult","simple","follow",
         "instructions","tutorial","guide","demo","ikut","faham","jelas",
     ],
-    "Time / Masa": [
+    "General": [
         "lama","cepat","lambat","minit","jam","masa","duration","quick",
         "slow","fast","long","short","minute","hour","time","tempoh",
-    ],
-    "Presentation / Persembahan": [
         "cantik","comel","menarik","kemas","presentation","plating","look",
         "beautiful","nice","neat","video","quality","visual","gambar","foto",
-    ],
-    "Texture / Tekstur": [
         "lembut","keras","rangup","gebu","moist","crispy","crunchy","soft",
         "hard","fluffy","dry","wet","texture","tekstur","kenyal","garing",
     ],
