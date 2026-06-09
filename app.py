@@ -19,6 +19,28 @@ st.markdown("""
     .stApp { background-color: #f7f8fc; }
     #MainMenu, footer, header { visibility: hidden; }
 
+    /* Fix text colours */
+h1, h2, h3, h4, h5, h6,
+p, label, span, div {
+    color: #1f2937 !important;
+}
+
+/* Sidebar text */
+[data-testid="stSidebar"] * {
+    color: #1f2937 !important;
+}
+
+/* Text area */
+textarea {
+    background-color: white !important;
+    color: #1f2937 !important;
+}
+
+/* Warning messages */
+[data-testid="stAlert"] {
+    color: #1f2937 !important;
+}
+
     .metric-card {
         background: white;
         border-radius: 12px;
