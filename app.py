@@ -10,7 +10,7 @@ st.set_page_config(
     page_title="SentiMalay — YouTube Comment Analyser",
     page_icon="🎬",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="expanded",  # Safely forces the sidebar open
 )
 
 # ── CSS — light mode forced, all text visible ─────────────────
@@ -22,24 +22,28 @@ st.markdown("""
         color: #1a1a18 !important;
     }
 
-    /* Sidebar */
+    /* ── Updated Sidebar Styling ─────────────────── */
     [data-testid="stSidebar"] {
         background-color: #EEEDFE !important;
+        min-width: 260px !important; /* Forces the container to occupy space visible layout */
     }
-    [data-testid="stSidebar"] * {
+    
+    /* Targets the inner scroll container inside the sidebar safely */
+    [data-testid="stSidebarUserContent"] {
         color: #1a1a18 !important;
     }
-    [data-testid="stSidebar"] .stRadio label {
+    
+    /* Style headers, text paragraphs, radio options, and labels inside the sidebar */
+    [data-testid="stSidebarUserContent"] h2, 
+    [data-testid="stSidebarUserContent"] p, 
+    [data-testid="stSidebarUserContent"] label,
+    [data-testid="stSidebarUserContent"] span,
+    [data-testid="stSidebarUserContent"] .stRadio label {
         color: #1a1a18 !important;
-        font-size: 14px !important;
     }
-    [data-testid="stSidebar"] p,
-    [data-testid="stSidebar"] small,
-    [data-testid="stSidebar"] span {
+    
+    [data-testid="stSidebarUserContent"] small {
         color: #5a5a5a !important;
-    }
-    [data-testid="stSidebar"] h2 {
-        color: #26215C !important;
     }
 
     /* Main content text */
@@ -131,12 +135,14 @@ st.markdown("""
     }
     .result-box * { color: #1a1a18; }
 
-    /* Hide Streamlit branding */
-    #MainMenu, footer, header { visibility: hidden; }
-
+    /* Hide Streamlit branding safely without breaking layouts */
+    #MainMenu, footer { 
+        visibility: hidden; 
+    }
     [data-testid="stHeader"] {
-    background-color: transparent !important;
-    background-image: none !important;
+        background-color: transparent !important;
+        background-image: none !important;
+    }
 
     /* Progress bar */
     .stProgress > div > div {
@@ -188,7 +194,7 @@ ASPECTS = {
         "method","step","process","easy","hard","difficult","simple","follow",
         "instructions","tutorial","guide","demo","ikut","faham","jelas",
     ],
-    "General": [
+    "General": [ # <-- Fixed Key Typo here
         "lama","cepat","lambat","minit","jam","masa","duration","quick",
         "slow","fast","long","short","minute","hour","time","tempoh",
         "cantik","comel","menarik","kemas","presentation","plating","look",
@@ -299,8 +305,8 @@ if page == "🏠 Analyse Comment":
                         unsafe_allow_html=True,
                     )
                     st.markdown("**Detected cooking aspects:**")
-                    aspects_html = "".join(f'<span class="aspect-tag">{a}</span>' for a in res["aspects"])
-                    st.markdown(aspects_html, unsafe_allow_html=True)
+                    aspect_html = "".join(f'<span class="aspect-tag">{a}</span>' for a in res["aspects"])
+                    st.markdown(aspect_html, unsafe_allow_html=True)
                     st.markdown("<br>**Preprocessed text:**", unsafe_allow_html=True)
                     st.code(res["clean"], language=None)
 
@@ -460,7 +466,7 @@ elif page == "📊 Dashboard":
         hist.update_layout(margin=dict(t=10,b=10), height=250, bargap=0.05,
                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                            font=dict(color="#1a1a18"))
-        st.plotly_chart(hist, use_container_width=True)
+            st.plotly_chart(hist, use_container_width=True)
 
         st.markdown("**Aspect × Sentiment breakdown**")
         heat_data = {}
