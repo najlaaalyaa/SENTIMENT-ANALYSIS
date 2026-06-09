@@ -28,15 +28,13 @@ st.markdown("<p style='color: #444;'>Analyze the sentiment of your text instantl
 # ------------------ Database ------------------ #
 conn = sqlite3.connect("history.db", check_same_thread=False)
 c = conn.cursor()
-c.execute('''
-CREATE TABLE IF NOT EXISTS history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    text TEXT,
-    sentiment TEXT,
-    aspect TEXT,
-    timestamp TEXT
-)
-''')
+c.execute('''CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT,
+                sentiment TEXT,
+                confidence REAL,
+                timestamp TEXT
+            )''')
 conn.commit()
 
 # ------------------ Load mBERT ------------------ #
@@ -51,21 +49,6 @@ def load_model():
 tokenizer, model, device = load_model()
 labels = ["negative","neutral","positive"]
 
-# ------------------ Aspect Detection ------------------ #
-aspect_keywords = {
-    "Taste": ["rasa","manis","masin","pedas","asam","gurih","lembut"],
-    "General": ["bagus","best","ok","menarik","mudah","simple"],
-    "Cooking Steps": ["rebus","goreng","bakar","panaskan","campur","masukkan","adun"],
-    "Ingredients": ["bahan","tepung","gula","garam","telur","minyak","santan"]
-}
-
-def detect_aspect(text):
-    text_lower = text.lower()
-    for aspect, keywords in aspect_keywords.items():
-        if any(k in text_lower for k in keywords):
-            return aspect
-    return "General"
-
 # ------------------ Functions ------------------ #
 def predict_sentiment(texts):
     results = []
@@ -75,21 +58,19 @@ def predict_sentiment(texts):
             logits = model(**inputs).logits
             probs = F.softmax(logits, dim=-1)
             pred_label = labels[torch.argmax(probs)]
-        results.append(pred_label)
+            confidence = float(torch.max(probs))
+        results.append((pred_label, confidence))
     return results
 
-def save_history(texts, sentiments, aspects):
+def save_history(texts, sentiments, confidences):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for text, sentiment, aspect in zip(texts, sentiments, aspects):
-        c.execute('INSERT INTO history (text,sentiment,aspect,timestamp) VALUES (?,?,?,?)',
-                  (text, sentiment, aspect, timestamp))
+    for text, sentiment, conf in zip(texts, sentiments, confidences):
+        c.execute('INSERT INTO history (text,sentiment,confidence,timestamp) VALUES (?,?,?,?)',
+                  (text, sentiment, conf, timestamp))
     conn.commit()
 
 def get_history():
-    df = pd.read_sql_query("SELECT * FROM history ORDER BY id DESC", conn)
-    if 'aspect' not in df.columns:
-        df['aspect'] = 'General'
-    return df
+    return pd.read_sql_query("SELECT * FROM history ORDER BY id DESC", conn)
 
 def plot_sentiment_bar(df):
     plt.figure(figsize=(6,3))
@@ -109,32 +90,33 @@ def plot_wordcloud(df):
 col1, col2 = st.columns([2,1])
 
 with col1:
-    st.markdown("### Enter YouTube comment or text")
+    st.markdown("### Enter YouTube URL or Comment")
     input_text = st.text_area("Enter text here:")
     if st.button("Analyze"):
         if input_text.strip() != "":
-            sentiment = predict_sentiment([input_text])[0]
-            aspect = detect_aspect(input_text)
-            save_history([input_text],[sentiment],[aspect])
+            preds = predict_sentiment([input_text])
+            sentiment, confidence = preds[0]
+            save_history([input_text],[sentiment],[confidence])
             
             st.markdown(f"**Sentiment:** {sentiment.capitalize()}")
-            st.markdown(f"**Aspect:** {aspect}")
+            st.markdown(f"**Confidence:** {confidence:.2f}")
             
-            df_display = pd.DataFrame({"text":[input_text],"sentiment":[sentiment],"aspect":[aspect]})
+            df_display = pd.DataFrame({"text":[input_text],"sentiment":[sentiment],"confidence":[confidence]})
             plot_sentiment_bar(df_display)
             plot_wordcloud(df_display)
         else:
             st.warning("Please enter a comment or URL!")
 
 with col2:
-    st.markdown("### Latest Result")
+    st.markdown("### Results Card")
     history_df = get_history()
     if not history_df.empty:
         latest = history_df.iloc[0]
-        st.markdown(f"**Text:** {latest['text']}")
-        st.markdown(f"**Sentiment:** {latest['sentiment'].capitalize()}")
-        st.markdown(f"**Aspect:** {latest['aspect']}")
-        st.markdown(f"**Timestamp:** {latest['timestamp']}")
+        st.markdown(f"**Latest Analysis:**")
+        st.markdown(f"Text: {latest['text']}")
+        st.markdown(f"Sentiment: {latest['sentiment'].capitalize()}")
+        st.markdown(f"Confidence: {latest['confidence']:.2f}")
+        st.markdown(f"Timestamp: {latest['timestamp']}")
 
 st.markdown("### Recent History")
 history_table = get_history()
