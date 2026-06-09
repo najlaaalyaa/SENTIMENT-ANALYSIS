@@ -183,7 +183,7 @@ ASPECTS = {
         "method","step","process","easy","hard","difficult","simple","follow",
         "instructions","tutorial","guide","demo","ikut","faham","jelas",
     ],
-    "TGeneral": [
+    "General": [
         "lama","cepat","lambat","minit","jam","masa","duration","quick",
         "slow","fast","long","short","minute","hour","time","tempoh",
         "cantik","comel","menarik","kemas","presentation","plating","look",
