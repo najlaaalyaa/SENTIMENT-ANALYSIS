@@ -9,7 +9,7 @@ import re
 st.set_page_config(
     page_title="SentiMalay — YouTube Comment Analyser",
     page_icon="🎬",
-    layout="wide",
+    layout="expanded",
 )
 
 # ── CSS — light mode forced, all text visible ─────────────────
