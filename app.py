@@ -194,7 +194,7 @@ ASPECTS = {
         "method","step","process","easy","hard","difficult","simple","follow",
         "instructions","tutorial","guide","demo","ikut","faham","jelas",
     ],
-    "General": [ # <-- Fixed Key Typo here
+    "General": [
         "lama","cepat","lambat","minit","jam","masa","duration","quick",
         "slow","fast","long","short","minute","hour","time","tempoh",
         "cantik","comel","menarik","kemas","presentation","plating","look",
@@ -466,7 +466,7 @@ elif page == "📊 Dashboard":
         hist.update_layout(margin=dict(t=10,b=10), height=250, bargap=0.05,
                            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                            font=dict(color="#1a1a18"))
-            st.plotly_chart(hist, use_container_width=True)
+        st.plotly_chart(hist, use_container_width=True)
 
         st.markdown("**Aspect × Sentiment breakdown**")
         heat_data = {}
