@@ -30,13 +30,12 @@ conn = sqlite3.connect("history.db", check_same_thread=False)
 c = conn.cursor()
 c.execute('''
 CREATE TABLE IF NOT EXISTS history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    text TEXT,
-    sentiment TEXT,
-    aspect TEXT,
-    timestamp TEXT
-)
-''')
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT,
+                sentiment TEXT,
+                aspect TEXT,
+                timestamp TEXT
+            )''')
 conn.commit()
 
 # ------------------ Load mBERT ------------------ #
@@ -87,7 +86,6 @@ def save_history(texts, sentiments, aspects):
 
 def get_history():
     df = pd.read_sql_query("SELECT * FROM history ORDER BY id DESC", conn)
-    # Ensure aspect column exists to avoid KeyError
     if 'aspect' not in df.columns:
         df['aspect'] = 'General'
     return df
@@ -109,7 +107,7 @@ def plot_wordcloud(df):
 # ------------------ Main Panel ------------------ #
 col1, col2 = st.columns([2,1])
 
-# ---------- Text Input ----------
+# Text Input
 with col1:
     st.markdown("### Enter YouTube comment or text")
     input_text = st.text_area("Enter text here:")
@@ -128,7 +126,7 @@ with col1:
         else:
             st.warning("Please enter a comment or URL!")
 
-# ---------- Results Card ----------
+# Results Card
 with col2:
     st.markdown("### Latest Result")
     history_df = get_history()
@@ -139,7 +137,7 @@ with col2:
         st.markdown(f"**Aspect:** {latest['aspect']}")
         st.markdown(f"**Timestamp:** {latest['timestamp']}")
 
-# ---------- Recent History ----------
+# Recent History
 st.markdown("### Recent History")
 history_table = get_history()
 st.dataframe(history_table)
