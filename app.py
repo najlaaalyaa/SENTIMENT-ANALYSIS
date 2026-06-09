@@ -57,7 +57,6 @@ def predict_sentiment(texts):
             logits = model(**inputs).logits
             probs = F.softmax(logits, dim=-1)
             pred_label = labels[torch.argmax(probs)]
-            confidence = float(torch.max(probs))
         results.append((pred_label, confidence))
     return results
 
