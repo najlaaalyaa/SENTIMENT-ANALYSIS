@@ -12,7 +12,7 @@ ASPECTS = {
         "sedap","lazat","lezat","rasa","masin","manis","masam","pahit","pedas",
         "tawar","enak","nyaman","lemak","taste","delicious","flavour","flavor",
         "yummy","tasteless","bland","sweet","salty","sour","spicy","bitter",
-        "kurang sedap","tak sedap","sangat sedap","memang sedap",
+        "kurang sedap","tak sedap","sangat sedap","memang sedap","sedap sangat"
     ],
     "Ingredients / Bahan": [
         "bahan","sukatan","resepi","resipi","ramuan","ganti","kurang","lebih",
@@ -26,17 +26,13 @@ ASPECTS = {
         "instructions","tutorial","guide","demo","ikut","faham","jelas",
         "peringkat","prosedur","arahan",
     ],
-    "Time / Masa": [
+    "General": [
         "lama","cepat","lambat","minit","jam","masa","duration","quick",
         "slow","fast","long","short","minute","hour","time","tempoh",
         "sekejap","sebentar","berapa lama",
-    ],
-    "Presentation / Persembahan": [
         "cantik","comel","menarik","kemas","presentation","plating","look",
         "beautiful","nice","neat","video","quality","visual","gambar","foto",
         "warna","colour","color","hiasan","garnish",
-    ],
-    "Texture / Tekstur": [
         "lembut","keras","rangup","gebu","moist","crispy","crunchy","soft",
         "hard","fluffy","dry","wet","texture","tekstur","kenyal","garing",
         "berderai","halus","kasar","licin",
