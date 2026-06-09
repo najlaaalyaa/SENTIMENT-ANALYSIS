@@ -133,6 +133,10 @@ st.markdown("""
     /* Hide Streamlit branding */
     #MainMenu, footer, header { visibility: hidden; }
 
+    [data-testid="stHeader"] {
+    background-color: transparent !important;
+    background-image: none !important;
+
     /* Progress bar */
     .stProgress > div > div {
         background-color: #534AB7 !important;
