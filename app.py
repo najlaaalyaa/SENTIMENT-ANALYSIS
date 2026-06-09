@@ -1,377 +1,497 @@
 import streamlit as st
-import anthropic
-import json
-import re
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
+import re
 
-# ── Page config ──────────────────────────────────────────────
+# ── Page config ───────────────────────────────────────────────
 st.set_page_config(
-    page_title="SentiAI — Sentiment Analysis",
-    page_icon="💜",
+    page_title="SentiMalay — YouTube Comment Analyser",
+    page_icon="🎬",
     layout="wide",
 )
 
-# ── Custom CSS ───────────────────────────────────────────────
+# ── CSS ───────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #f8f7ff;
-    }
-    [data-testid="stSidebar"] .block-container {
-        padding-top: 2rem;
-    }
+    [data-testid="stSidebar"] { background-color: #f0f2ff; }
+    .stApp { background-color: #f7f8fc; }
+    #MainMenu, footer, header { visibility: hidden; }
 
-    /* Main background */
-    .stApp {
-        background-color: #f4f3fc;
-    }
-
-    /* Cards */
-    .card {
+    .metric-card {
         background: white;
         border-radius: 12px;
-        padding: 1.25rem 1.5rem;
+        padding: 1rem 1.25rem;
         border: 0.5px solid rgba(0,0,0,0.08);
-        margin-bottom: 1rem;
-    }
-
-    .card-title {
-        font-size: 14px;
-        font-weight: 600;
-        color: #1a1a18;
-        margin-bottom: 0.75rem;
-    }
-
-    /* Sentiment badges */
-    .badge-positive {
-        background: #EAF3DE;
-        border-radius: 10px;
-        padding: 14px 18px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 1rem;
-    }
-    .badge-neutral {
-        background: #FAEEDA;
-        border-radius: 10px;
-        padding: 14px 18px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 1rem;
-    }
-    .badge-negative {
-        background: #FCEBEB;
-        border-radius: 10px;
-        padding: 14px 18px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 1rem;
-    }
-
-    .sent-positive { color: #27500A; font-size: 20px; font-weight: 600; }
-    .sent-neutral  { color: #633806; font-size: 20px; font-weight: 600; }
-    .sent-negative { color: #791F1F; font-size: 20px; font-weight: 600; }
-
-    /* Score breakdown */
-    .breakdown-pos {
-        background: #EAF3DE;
-        border-radius: 8px;
         text-align: center;
-        padding: 10px;
-        color: #27500A;
-        font-weight: 600;
     }
-    .breakdown-neu {
-        background: #FAEEDA;
-        border-radius: 8px;
-        text-align: center;
-        padding: 10px;
-        color: #633806;
-        font-weight: 600;
-    }
-    .breakdown-neg {
-        background: #FCEBEB;
-        border-radius: 8px;
-        text-align: center;
-        padding: 10px;
-        color: #791F1F;
-        font-weight: 600;
-    }
+    .metric-num  { font-size: 2rem; font-weight: 700; }
+    .metric-label{ font-size: 12px; color: #888; margin-top: 2px; }
 
-    /* Pill badges in table */
-    .pill-positive { background:#EAF3DE; color:#27500A; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:500; }
-    .pill-neutral  { background:#FAEEDA; color:#633806; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:500; }
-    .pill-negative { background:#FCEBEB; color:#791F1F; padding:2px 10px; border-radius:99px; font-size:12px; font-weight:500; }
+    .badge-Positive { background:#EAF3DE; color:#27500A; padding:3px 12px; border-radius:99px; font-size:12px; font-weight:600; }
+    .badge-Neutral  { background:#FAEEDA; color:#633806; padding:3px 12px; border-radius:99px; font-size:12px; font-weight:600; }
+    .badge-Negative { background:#FCEBEB; color:#791F1F; padding:3px 12px; border-radius:99px; font-size:12px; font-weight:600; }
 
-    /* Analyze button */
+    .aspect-tag {
+        display:inline-block;
+        background:#EEEDFE;
+        color:#534AB7;
+        padding:3px 10px;
+        border-radius:99px;
+        font-size:11px;
+        margin:2px;
+        font-weight:500;
+    }
+    .result-box {
+        background:white;
+        border-radius:12px;
+        padding:1.25rem;
+        border:0.5px solid rgba(0,0,0,0.08);
+        margin-bottom:0.75rem;
+    }
     .stButton > button {
-        background: #7F77DD !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
-        font-weight: 500 !important;
-        padding: 0.5rem 1.5rem !important;
-        transition: background 0.2s !important;
+        background:#534AB7 !important;
+        color:white !important;
+        border:none !important;
+        border-radius:8px !important;
+        font-weight:500 !important;
     }
-    .stButton > button:hover {
-        background: #534AB7 !important;
-    }
-
-    /* Hide default streamlit header */
-    #MainMenu, footer { visibility: hidden; }
-    header { visibility: hidden; }
+    .stButton > button:hover { background:#3C3489 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Session state ─────────────────────────────────────────────
+# ── Lazy imports ──────────────────────────────────────────────
+@st.cache_resource(show_spinner="Loading mBERT model…")
+def load_model():
+    from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
+    import torch
+
+    MODEL_NAME = "nlptown/bert-base-multilingual-uncased-sentiment"
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    model     = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+    classifier = pipeline(
+        "text-classification",
+        model=model,
+        tokenizer=tokenizer,
+        device=-1,          # CPU; change to 0 for GPU
+        truncation=True,
+        max_length=512,
+    )
+    return classifier
+
+# ── Aspect dictionary (Malay + English cooking terms) ─────────
+ASPECTS = {
+    "Taste / Rasa": [
+        "sedap","lazat","lezat","rasa","masin","manis","masam","pahit","pedas",
+        "tawar","enak","nyaman","lemak","taste","delicious","flavour","flavor",
+        "yummy","tasteless","bland","sweet","salty","sour","spicy","bitter",
+    ],
+    "Ingredients / Bahan": [
+        "bahan","sukatan","resepi","resipi","ramuan","ganti","kurang","lebih",
+        "ingredient","recipe","substitute","measurement","quantity","amount",
+        "portion","spice","rempah","santan","minyak","garam","gula","tepung",
+    ],
+    "Cooking Steps / Langkah": [
+        "cara","langkah","kaedah","teknik","proses","mudah","susah","sukar",
+        "method","step","process","easy","hard","difficult","simple","follow",
+        "instructions","tutorial","guide","demo","ikut","faham","jelas",
+    ],
+    "Time / Masa": [
+        "lama","cepat","lambat","minit","jam","masa","duration","quick",
+        "slow","fast","long","short","minute","hour","time","tempoh",
+    ],
+    "Presentation / Persembahan": [
+        "cantik","comel","menarik","kemas","presentation","plating","look",
+        "beautiful","nice","neat","video","quality","visual","gambar","foto",
+    ],
+    "Texture / Tekstur": [
+        "lembut","keras","rangup","gebu","moist","crispy","crunchy","soft",
+        "hard","fluffy","dry","wet","texture","tekstur","kenyal","garing",
+    ],
+}
+
+# ── Map mBERT 1-5 star to Positive/Neutral/Negative ──────────
+def map_label(label: str, score: float):
+    star = int(label.split()[0])          # "1 star" → 1
+    if star >= 4:
+        sentiment = "Positive"
+    elif star == 3:
+        sentiment = "Neutral"
+    else:
+        sentiment = "Negative"
+    # normalise confidence to 0-1
+    confidence = round(score, 3)
+    return sentiment, confidence
+
+# ── Aspect extraction ─────────────────────────────────────────
+def extract_aspects(text: str) -> list[str]:
+    text_lower = text.lower()
+    found = []
+    for aspect, keywords in ASPECTS.items():
+        if any(kw in text_lower for kw in keywords):
+            found.append(aspect)
+    return found if found else ["General"]
+
+# ── Text preprocessing ────────────────────────────────────────
+def preprocess(text: str) -> str:
+    text = re.sub(r"http\S+|www\S+", "", text)          # remove URLs
+    text = re.sub(r"@\w+", "", text)                     # remove mentions
+    text = re.sub(r"[^\w\s',.!?]", " ", text)            # remove special chars
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+# ── Analyse single comment ────────────────────────────────────
+def analyse_comment(text: str, classifier) -> dict:
+    clean  = preprocess(text)
+    result = classifier(clean[:512])[0]
+    sentiment, confidence = map_label(result["label"], result["score"])
+    aspects = extract_aspects(clean)
+    return {
+        "original":   text,
+        "clean":      clean,
+        "sentiment":  sentiment,
+        "confidence": confidence,
+        "aspects":    aspects,
+    }
+
+# ── Session state ──────────────────────────────────────────────
 if "history" not in st.session_state:
     st.session_state.history = []
-if "next_id" not in st.session_state:
-    st.session_state.next_id = 1
-if "result" not in st.session_state:
-    st.session_state.result = None
 
-# ── Sidebar ───────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════
+# SIDEBAR
+# ═════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown("## 💜 SentiAI")
+    st.markdown("## 🎬 SentiMalay")
+    st.caption("Sentiment Analysis of Malay YouTube Comments")
     st.markdown("---")
     page = st.radio(
-        "Navigation",
-        ["🏠 Home", "🕐 History", "ℹ️ About"],
+        "Navigate",
+        ["🏠 Analyse Comment", "📂 Batch Analysis", "📊 Dashboard", "ℹ️ About"],
         label_visibility="collapsed",
     )
     st.markdown("---")
     st.markdown(
-        "<small style='color:#aaa'>Understanding emotions,<br>one text at a time.</small>",
+        "<small style='color:#aaa'>Powered by mBERT (bert-base-multilingual-uncased-sentiment)<br><br>"
+        "UiTM Final Year Project 2026<br>Nur Najlaa' Alyaa' Binti Roslan</small>",
         unsafe_allow_html=True,
     )
 
-# ── Anthropic client ──────────────────────────────────────────
-def get_client():
-    try:
-        api_key = st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        api_key = None
-    if not api_key:
-        st.error("⚠️ No API key found. Add `ANTHROPIC_API_KEY` to your Streamlit secrets.")
-        st.stop()
-    return anthropic.Anthropic(api_key=api_key)
-
-# ── Analyze function ──────────────────────────────────────────
-def analyze_sentiment(text: str, analysis_type: str) -> dict:
-    type_map = {
-        "Overall Sentiment":      "overall sentiment analysis",
-        "Emotion Detection":      "emotion detection",
-        "Aspect-based Sentiment": "aspect-based sentiment analysis",
-    }
-    client = get_client()
-
-    prompt = f"""Analyze the sentiment of the following text using {type_map[analysis_type]}.
-
-Text: "{text}"
-
-Respond ONLY with a valid JSON object — no preamble, no markdown:
-{{"sentiment":"Positive","confidence":0.92,"positive":92,"neutral":6,"negative":2,"description":"This text has a positive sentiment."}}
-
-Rules:
-- sentiment must be exactly "Positive", "Neutral", or "Negative"
-- confidence is a float between 0 and 1
-- positive, neutral, negative are integers that sum to 100"""
-
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=250,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = message.content[0].text
-    raw = re.sub(r"```json|```", "", raw).strip()
-    return json.loads(raw)
-
-# ══════════════════════════════════════════════════════════════
-# PAGE: HOME
-# ══════════════════════════════════════════════════════════════
-if page == "🏠 Home":
-
-    # Header
-    col_icon, col_title = st.columns([0.07, 0.93])
-    with col_icon:
-        st.markdown("### 💜")
-    with col_title:
-        st.markdown("### Sentiment Analysis")
-        st.caption("Analyze the sentiment of your text instantly")
-
+# ═════════════════════════════════════════════════════════════
+# PAGE 1 — ANALYSE SINGLE COMMENT
+# ═════════════════════════════════════════════════════════════
+if page == "🏠 Analyse Comment":
+    st.markdown("### 🏠 Analyse YouTube Comment")
+    st.caption("Enter a Malay or mixed Malay–English YouTube comment for sentiment and aspect analysis.")
     st.markdown("")
 
-    col_left, col_right = st.columns(2, gap="medium")
+    col_in, col_out = st.columns([1, 1], gap="large")
 
-    # ── Left: Input ──
-    with col_left:
-        st.markdown('<div class="card"><div class="card-title">Analyze new text</div>', unsafe_allow_html=True)
-
-        input_text = st.text_area(
-            "Enter your text below:",
-            placeholder="Type or paste your text here…",
-            height=130,
+    with col_in:
+        st.markdown("**Enter YouTube comment:**")
+        comment = st.text_area(
+            label="comment",
+            label_visibility="collapsed",
+            placeholder='e.g. "Resepi ni sedap sangat! Tapi masa memasak agak lama sikit."',
+            height=150,
         )
+        demo_btn = st.button("🎲 Try demo comment")
+        if demo_btn:
+            comment = "Resepi ni sedap sangat! Bahan-bahannya mudah didapati. Tapi cara masak dia agak susah sikit untuk orang baru."
+        analyse_btn = st.button("🔍 Analyse Comment", use_container_width=True)
 
-        analysis_type = st.selectbox(
-            "Choose an analysis option:",
-            ["Overall Sentiment", "Emotion Detection", "Aspect-based Sentiment"],
-        )
+    with col_out:
+        if analyse_btn and comment.strip():
+            with st.spinner("Analysing with mBERT…"):
+                try:
+                    clf = load_model()
+                    res = analyse_comment(comment, clf)
+                    # Save to history
+                    res["id"]   = len(st.session_state.history) + 1
+                    res["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.session_state.history.insert(0, res)
 
-        analyze_clicked = st.button("✨ Analyze", use_container_width=False)
-        st.markdown("</div>", unsafe_allow_html=True)
+                    s = res["sentiment"]
+                    icons = {"Positive": "😊", "Neutral": "😐", "Negative": "😞"}
+                    colors = {"Positive": "#EAF3DE", "Neutral": "#FAEEDA", "Negative": "#FCEBEB"}
+                    text_colors = {"Positive": "#27500A", "Neutral": "#633806", "Negative": "#791F1F"}
 
-    # ── Right: Result ──
-    with col_right:
-        st.markdown('<div class="card"><div class="card-title">Result</div>', unsafe_allow_html=True)
+                    st.markdown(
+                        f"""<div style='background:{colors[s]};border-radius:12px;padding:1rem 1.25rem;margin-bottom:0.75rem'>
+                        <span style='font-size:2rem'>{icons[s]}</span>
+                        <span style='font-size:1.3rem;font-weight:700;color:{text_colors[s]};margin-left:10px'>{s}</span>
+                        <div style='font-size:12px;color:#555;margin-top:4px'>Confidence: {res['confidence']:.2%}</div>
+                        </div>""",
+                        unsafe_allow_html=True,
+                    )
 
-        if analyze_clicked:
-            if not input_text.strip():
-                st.warning("Please enter some text first.")
-            else:
-                with st.spinner("Analyzing…"):
-                    try:
-                        result = analyze_sentiment(input_text.strip(), analysis_type)
-                        st.session_state.result = result
+                    st.markdown("**Detected cooking aspects:**")
+                    aspects_html = "".join(f'<span class="aspect-tag">{a}</span>' for a in res["aspects"])
+                    st.markdown(aspects_html, unsafe_allow_html=True)
 
-                        # Save to history
-                        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        st.session_state.history.insert(0, {
-                            "id":        st.session_state.next_id,
-                            "text":      input_text.strip(),
-                            "sentiment": result["sentiment"],
-                            "score":     f"{result['confidence']:.2f}",
-                            "date":      now,
-                        })
-                        st.session_state.next_id += 1
+                    st.markdown("<br>**Preprocessed text:**", unsafe_allow_html=True)
+                    st.code(res["clean"], language=None)
 
-                    except Exception as e:
-                        st.error(f"Analysis failed: {e}")
-                        st.session_state.result = None
+                except Exception as e:
+                    st.error(f"Error: {e}\n\nMake sure `transformers` and `torch` are installed.")
 
-        result = st.session_state.result
-
-        if result is None:
-            st.markdown(
-                "<div style='text-align:center;padding:3rem 0;color:#aaa'>"
-                "🔍<br><small>Your result will appear here</small></div>",
-                unsafe_allow_html=True,
-            )
+        elif analyse_btn:
+            st.warning("Please enter a comment first.")
         else:
-            s = result["sentiment"].lower()
-            icons = {"positive": "😊", "neutral": "😐", "negative": "😞"}
-            icon  = icons.get(s, "🔍")
-
-            # Badge
             st.markdown(
-                f'<div class="badge-{s}">'
-                f'<span style="font-size:2rem">{icon}</span>'
-                f'<div>'
-                f'<div class="sent-{s}">{result["sentiment"]}</div>'
-                f'<div style="font-size:12px;color:#666">{result["description"]}</div>'
-                f'</div></div>',
+                "<div style='text-align:center;padding:3rem 0;color:#bbb'>"
+                "🔍<br><small>Result will appear here</small></div>",
                 unsafe_allow_html=True,
             )
 
-            # Confidence bar
-            conf = result["confidence"]
-            st.markdown(f"**Confidence score** — `{conf:.2f}`")
-            st.progress(conf)
+    # ── Recent results ────────────────────────────────────────
+    if st.session_state.history:
+        st.markdown("---")
+        st.markdown("#### 🕐 Recent analyses")
+        for h in st.session_state.history[:5]:
+            s = h["sentiment"]
+            badge = f'<span class="badge-{s}">{s}</span>'
+            aspects_html = " ".join(f'<span class="aspect-tag">{a}</span>' for a in h["aspects"])
+            st.markdown(
+                f"""<div class='result-box'>
+                <div style='display:flex;justify-content:space-between;align-items:center'>
+                  <div style='font-size:13px;color:#333;max-width:65%'>{h['original'][:120]}{'…' if len(h['original'])>120 else ''}</div>
+                  <div>{badge} &nbsp;<span style='font-size:12px;color:#aaa'>{h['confidence']:.0%}</span></div>
+                </div>
+                <div style='margin-top:6px'>{aspects_html}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
 
-            # Breakdown
-            st.markdown("**Score breakdown**")
-            b1, b2, b3 = st.columns(3)
-            with b1:
-                st.markdown(
-                    f'<div class="breakdown-pos"><div style="font-size:1.4rem">{result["positive"]}%</div>'
-                    f'<div style="font-size:11px">Positive</div></div>',
-                    unsafe_allow_html=True,
-                )
-            with b2:
-                st.markdown(
-                    f'<div class="breakdown-neu"><div style="font-size:1.4rem">{result["neutral"]}%</div>'
-                    f'<div style="font-size:11px">Neutral</div></div>',
-                    unsafe_allow_html=True,
-                )
-            with b3:
-                st.markdown(
-                    f'<div class="breakdown-neg"><div style="font-size:1.4rem">{result["negative"]}%</div>'
-                    f'<div style="font-size:11px">Negative</div></div>',
-                    unsafe_allow_html=True,
-                )
+# ═════════════════════════════════════════════════════════════
+# PAGE 2 — BATCH ANALYSIS
+# ═════════════════════════════════════════════════════════════
+elif page == "📂 Batch Analysis":
+    st.markdown("### 📂 Batch Comment Analysis")
+    st.caption("Upload a CSV file of YouTube comments for bulk analysis.")
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["📤 Upload CSV", "✏️ Paste Comments"])
 
-    # ── History table ──
-    st.markdown("---")
-    st.markdown("#### Recent history")
+    with tab1:
+        st.markdown("**CSV must have a column named `comment`.**")
+        uploaded = st.file_uploader("Upload CSV", type=["csv"])
 
-    if not st.session_state.history:
-        st.info("No analyses yet — run your first one above.")
+        if uploaded:
+            df = pd.read_csv(uploaded)
+            if "comment" not in df.columns:
+                st.error("CSV must contain a column named `comment`.")
+            else:
+                st.success(f"Loaded {len(df)} comments.")
+                st.dataframe(df.head(5), use_container_width=True)
+
+                if st.button("🚀 Run Batch Analysis"):
+                    clf = load_model()
+                    results = []
+                    bar = st.progress(0, text="Analysing…")
+                    for i, row in df.iterrows():
+                        res = analyse_comment(str(row["comment"]), clf)
+                        results.append(res)
+                        bar.progress((i + 1) / len(df), text=f"Analysing {i+1}/{len(df)}…")
+                    bar.empty()
+
+                    out_df = pd.DataFrame(results)
+                    st.session_state["batch_results"] = out_df
+                    st.success("Done!")
+
+    with tab2:
+        pasted = st.text_area(
+            "Paste one comment per line:",
+            height=200,
+            placeholder="Sedap sangat resepi ni!\nLangkah memasak agak susah sikit.\nBahan-bahan mudah didapati.",
+        )
+        if st.button("🚀 Analyse Pasted Comments"):
+            lines = [l.strip() for l in pasted.splitlines() if l.strip()]
+            if lines:
+                clf = load_model()
+                results = []
+                bar = st.progress(0, text="Analysing…")
+                for i, line in enumerate(lines):
+                    res = analyse_comment(line, clf)
+                    results.append(res)
+                    bar.progress((i + 1) / len(lines))
+                bar.empty()
+                st.session_state["batch_results"] = pd.DataFrame(results)
+            else:
+                st.warning("Please paste at least one comment.")
+
+    # ── Show batch results ────────────────────────────────────
+    if "batch_results" in st.session_state:
+        out = st.session_state["batch_results"]
+        st.markdown("---")
+        st.markdown(f"#### Results — {len(out)} comments")
+
+        c1, c2, c3 = st.columns(3)
+        pos = (out["sentiment"] == "Positive").sum()
+        neu = (out["sentiment"] == "Neutral").sum()
+        neg = (out["sentiment"] == "Negative").sum()
+
+        c1.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#3B6D11'>{pos}</div><div class='metric-label'>Positive</div></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#854F0B'>{neu}</div><div class='metric-label'>Neutral</div></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#A32D2D'>{neg}</div><div class='metric-label'>Negative</div></div>", unsafe_allow_html=True)
+
+        st.markdown("")
+
+        # Display table
+        display = out[["original", "sentiment", "confidence", "aspects"]].copy()
+        display.columns = ["Comment", "Sentiment", "Confidence", "Aspects"]
+        display["Confidence"] = display["Confidence"].apply(lambda x: f"{x:.0%}")
+        display["Aspects"] = display["Aspects"].apply(lambda x: ", ".join(x))
+        st.dataframe(display, use_container_width=True, height=300)
+
+        # Download
+        csv = out.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "⬇️ Download results CSV",
+            data=csv,
+            file_name="sentiment_results.csv",
+            mime="text/csv",
+        )
+
+# ═════════════════════════════════════════════════════════════
+# PAGE 3 — DASHBOARD
+# ═════════════════════════════════════════════════════════════
+elif page == "📊 Dashboard":
+    st.markdown("### 📊 Analytics Dashboard")
+
+    all_data = st.session_state.history.copy()
+    batch    = st.session_state.get("batch_results", None)
+
+    if batch is not None:
+        batch_list = batch.to_dict("records")
+        all_data   = batch_list + all_data
+
+    if not all_data:
+        st.info("No data yet — analyse some comments first on the Home or Batch page.")
     else:
-        pills = {
-            "Positive": '<span class="pill-positive">Positive</span>',
-            "Neutral":  '<span class="pill-neutral">Neutral</span>',
-            "Negative": '<span class="pill-negative">Negative</span>',
-        }
+        df = pd.DataFrame(all_data)
 
-        table_html = """
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead>
-            <tr style="border-bottom:1px solid #eee;color:#888;font-weight:500">
-              <th style="padding:8px;text-align:left">ID</th>
-              <th style="padding:8px;text-align:left">Text</th>
-              <th style="padding:8px;text-align:left">Sentiment</th>
-              <th style="padding:8px;text-align:left">Score</th>
-              <th style="padding:8px;text-align:left">Date &amp; time</th>
-            </tr>
-          </thead>
-          <tbody>
-        """
-        for h in st.session_state.history:
-            snippet = (h["text"][:60] + "…") if len(h["text"]) > 60 else h["text"]
-            pill    = pills.get(h["sentiment"], h["sentiment"])
-            table_html += f"""
-            <tr style="border-bottom:0.5px solid #f0f0f0">
-              <td style="padding:10px 8px;color:#aaa">{h['id']}</td>
-              <td style="padding:10px 8px;color:#555;max-width:220px">{snippet}</td>
-              <td style="padding:10px 8px">{pill}</td>
-              <td style="padding:10px 8px">{h['score']}</td>
-              <td style="padding:10px 8px;color:#aaa">{h['date']}</td>
-            </tr>
-            """
-        table_html += "</tbody></table>"
-        st.markdown(table_html, unsafe_allow_html=True)
+        total = len(df)
+        pos   = (df["sentiment"] == "Positive").sum()
+        neu   = (df["sentiment"] == "Neutral").sum()
+        neg   = (df["sentiment"] == "Negative").sum()
+        avg_conf = df["confidence"].mean()
 
-        if st.button("🗑️ Clear history"):
-            st.session_state.history = []
-            st.rerun()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.markdown(f"<div class='metric-card'><div class='metric-num'>{total}</div><div class='metric-label'>Total comments</div></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#3B6D11'>{pos}</div><div class='metric-label'>Positive</div></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#854F0B'>{neu}</div><div class='metric-label'>Neutral</div></div>", unsafe_allow_html=True)
+        c4.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#A32D2D'>{neg}</div><div class='metric-label'>Negative</div></div>", unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════════════════════
-# PAGE: HISTORY
-# ══════════════════════════════════════════════════════════════
-elif page == "🕐 History":
-    st.markdown("### 🕐 Analysis history")
-    st.caption("All your previous sentiment analyses")
+        st.markdown("")
+        col_l, col_r = st.columns(2)
 
-    if not st.session_state.history:
-        st.info("No analyses yet. Head to Home and run your first one!")
-    else:
-        for h in st.session_state.history:
-            with st.expander(f"#{h['id']} — {h['text'][:60]}{'…' if len(h['text'])>60 else ''}"):
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Sentiment", h["sentiment"])
-                c2.metric("Confidence", h["score"])
-                c3.metric("Date", h["date"].split(" ")[0])
-                st.caption(f"Full text: {h['text']}")
+        # ── Pie chart ────────────────────────────────────────
+        with col_l:
+            st.markdown("**Sentiment distribution**")
+            pie = go.Figure(go.Pie(
+                labels=["Positive", "Neutral", "Negative"],
+                values=[pos, neu, neg],
+                marker_colors=["#639922", "#BA7517", "#E24B4A"],
+                hole=0.45,
+                textinfo="label+percent",
+            ))
+            pie.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=280, showlegend=False)
+            st.plotly_chart(pie, use_container_width=True)
 
-        if st.button("🗑️ Clear all history"):
-            st.session_state.history = []
-            st.rerun()
+        # ── Aspect bar chart ──────────────────────────────────
+        with col_r:
+            st.markdown("**Top detected aspects**")
+            aspect_counts = {}
+            for row in all_data:
+                for a in row.get("aspects", []):
+                    aspect_counts[a] = aspect_counts.get(a, 0) + 1
+            aspect_df = pd.DataFrame(
+                sorted(aspect_counts.items(), key=lambda x: -x[1]),
+                columns=["Aspect", "Count"],
+            )
+            bar = px.bar(
+                aspect_df, x="Count", y="Aspect", orientation="h",
+                color_discrete_sequence=["#7F77DD"],
+            )
+            bar.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=280, yaxis_title="", xaxis_title="")
+            st.plotly_chart(bar, use_container_width=True)
 
+        # ── Confidence histogram ──────────────────────────────
+        st.markdown("**Confidence score distribution**")
+        hist = px.histogram(
+            df, x="confidence", nbins=20, color="sentiment",
+            color_discrete_map={"Positive": "#639922", "Neutral": "#BA7517", "Negative": "#E24B4A"},
+        )
+        hist.update_layout(margin=dict(t=10, b=10), height=250, bargap=0.05)
+        st.plotly_chart(hist, use_container_width=True)
+
+        # ── Aspect sentiment heatmap ──────────────────────────
+        st.markdown("**Aspect × Sentiment breakdown**")
+        heat_data = {}
+        for row in all_data:
+            for a in row.get("aspects", []):
+                if a not in heat_data:
+                    heat_data[a] = {"Positive": 0, "Neutral": 0, "Negative": 0}
+                heat_data[a][row["sentiment"]] += 1
+
+        if heat_data:
+            heat_df = pd.DataFrame(heat_data).T.fillna(0).astype(int)
+            heat_df = heat_df[["Positive", "Neutral", "Negative"]]
+            fig_heat = px.imshow(
+                heat_df,
+                color_continuous_scale=["#FCEBEB", "#FAEEDA", "#EAF3DE"],
+                text_auto=True,
+                aspect="auto",
+            )
+            fig_heat.update_layout(margin=dict(t=10, b=10), height=300)
+            st.plotly_chart(fig_heat, use_container_width=True)
+
+        # ── Download ──────────────────────────────────────────
+        csv = df.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Download all data CSV", data=csv, file_name="dashboard_data.csv", mime="text/csv")
+
+# ═════════════════════════════════════════════════════════════
+# PAGE 4 — ABOUT
+# ═════════════════════════════════════════════════════════════
+elif page == "ℹ️ About":
+    st.markdown("### ℹ️ About This System")
+    st.markdown("""
+    **Sentiment Analysis of YouTube Comments**
+    — Nur Najlaa' Alyaa' Binti Roslan (2023436326), UiTM, January 2026
+
+    ---
+
+    #### System overview
+    This system analyses Malay YouTube cooking comments to classify their sentiment and extract
+    cooking-related aspects, helping content creators understand audience feedback at scale.
+
+    | Component | Technology |
+    |---|---|
+    | UI Framework | Streamlit |
+    | Sentiment Model | mBERT (`bert-base-multilingual-uncased-sentiment`) |
+    | Aspect Extraction | Keyword-based (Malay + English cooking vocabulary) |
+    | Data Collection | Apify YouTube Comments Scraper + YouTube Data API |
+    | Visualisation | Plotly |
+
+    #### Sentiment labels
+    | Label | mBERT Stars | Description |
+    |---|---|---|
+    | ✅ Positive | 4–5 stars | Viewer liked the video / recipe |
+    | 😐 Neutral  | 3 stars   | Mixed or no clear opinion |
+    | ❌ Negative | 1–2 stars | Viewer disliked or criticised |
+
+    #### Cooking aspects detected
+    - **Taste / Rasa** — sedap, lazat, pedas, manis …
+    - **Ingredients / Bahan** — resepi, sukatan, rempah …
+    - **Cooking Steps / Langkah** — cara, langkah, mudah, susah …
+    - **Time / Masa** — lama, cepat, minit …
+    - **Presentation / Persembahan** — cantik, menarik, video …
+    - **Texture / Tekstur** — lembut, rangup, gebu …
+
+    #### How to run locally
+    ```bash
+    pip install -r requirements.txt
+    streamlit run app.py
+    ```
+    """)
