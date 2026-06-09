@@ -32,7 +32,6 @@ c.execute('''CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 text TEXT,
                 sentiment TEXT,
-                confidence REAL,
                 timestamp TEXT
             )''')
 conn.commit()
@@ -62,11 +61,11 @@ def predict_sentiment(texts):
         results.append((pred_label, confidence))
     return results
 
-def save_history(texts, sentiments, confidences):
+def save_history(texts, sentiments):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for text, sentiment, conf in zip(texts, sentiments, confidences):
-        c.execute('INSERT INTO history (text,sentiment,confidence,timestamp) VALUES (?,?,?,?)',
-                  (text, sentiment, conf, timestamp))
+    for text, sentiment, conf in zip(texts, sentiments):
+        c.execute('INSERT INTO history (text,sentiment,timestamp) VALUES (?,?,?,?)',
+                  (text, sentiment, timestamp))
     conn.commit()
 
 def get_history():
