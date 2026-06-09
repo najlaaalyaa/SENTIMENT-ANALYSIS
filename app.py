@@ -11,8 +11,8 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch.nn.functional as F
 
-# ----------------- Page Config & Style ----------------- #
-st.set_page_config(page_title="YouTube Sentiment Analyzer", layout="wide")
+# ----------------- Page Config ----------------- #
+st.set_page_config(page_title="Malay Sentiment Analyzer", layout="wide")
 st.markdown("""
 <style>
 .stApp { background-color: #FFF5F8; }
@@ -27,7 +27,7 @@ st.sidebar.button("Home")
 st.sidebar.button("History")
 st.sidebar.button("About")
 
-# ----------------- Database ----------------- #
+# ----------------- SQLite Database ----------------- #
 conn = sqlite3.connect("history.db", check_same_thread=False)
 c = conn.cursor()
 c.execute('''
@@ -52,9 +52,24 @@ def load_model():
     return tokenizer, model, device
 
 tokenizer, model, device = load_model()
-labels = ["negative","neutral","positive"]
+labels = ["negative", "neutral", "positive"]
 
-# ----------------- Prediction Functions ----------------- #
+# ----------------- Aspect Detection ----------------- #
+aspect_keywords = {
+    "Taste": ["rasa", "manis", "masin", "pedas", "asam", "lembut", "gurih"],
+    "General": ["bagus", "best", "ok", "menarik", "simple", "mudah"],
+    "Cooking Steps": ["rebus", "goreng", "bakar", "panaskan", "campur", "masukkan", "adun"],
+    "Ingredients": ["bahan", "tepung", "gula", "garam", "telur", "minyak", "santan"]
+}
+
+def detect_aspect(text):
+    text_lower = text.lower()
+    for aspect, keywords in aspect_keywords.items():
+        if any(k in text_lower for k in keywords):
+            return aspect
+    return "General"
+
+# ----------------- Prediction ----------------- #
 def predict_sentiment(texts):
     results, confidences = [], []
     for text in texts:
@@ -68,16 +83,18 @@ def predict_sentiment(texts):
         confidences.append(confidence)
     return results, confidences
 
+# ----------------- History Management ----------------- #
 def save_history(texts, aspects, sentiments, confidences):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for text, aspect, sentiment, conf in zip(texts, aspects, sentiments, confidences):
-        c.execute('INSERT INTO history (text,aspect,sentiment,confidence,timestamp) VALUES (?,?,?,?,?)',
+        c.execute('INSERT INTO history (text, aspect, sentiment, confidence, timestamp) VALUES (?,?,?,?,?)',
                   (text, aspect, sentiment, conf, timestamp))
     conn.commit()
 
 def get_history():
     return pd.read_sql_query("SELECT * FROM history ORDER BY id DESC", conn)
 
+# ----------------- Visualization ----------------- #
 def plot_sentiment_distribution(df, title="Sentiment Distribution"):
     plt.figure(figsize=(6,3))
     sns.countplot(x='sentiment', data=df, palette=['#FFB3BA','#BAE1FF','#BAFFC9'])
@@ -93,34 +110,42 @@ def generate_wordcloud(df, title="WordCloud"):
     plt.title(title)
     st.pyplot(plt)
 
-# ----------------- Main Interface ----------------- #
-tab1, tab2, tab3 = st.tabs(["Text/URL Input", "CSV Upload", "History"])
+# ----------------- Streamlit Tabs ----------------- #
+tab1, tab2, tab3 = st.tabs(["Text Input", "CSV Upload", "History"])
 
-# Tab 1: Single Input
+# ---------- Tab 1: Text Input ----------
 with tab1:
-    input_text = st.text_area("Enter YouTube comment or text:")
-    input_aspect = st.selectbox("Select Aspect", ["General","Cooking","Challenge","Education","Mukbang","QnA","Vlog"])
-    if st.button("Analyze"):
+    input_text = st.text_area("Paste your comment or text here:")
+    if st.button("Analyze Text"):
         if input_text.strip() != "":
+            aspect = detect_aspect(input_text)
             sentiments, confidences = predict_sentiment([input_text])
-            save_history([input_text],[input_aspect],sentiments,confidences)
-            df_result = pd.DataFrame({"text":[input_text], "aspect":[input_aspect],
-                                      "sentiment":sentiments, "confidence":confidences})
-            st.subheader("Result Card")
-            st.write(f"**Sentiment:** {sentiments[0].capitalize()} | **Confidence:** {confidences[0]:.2f}")
-            plot_sentiment_distribution(df_result, f"Sentiment - {input_aspect}")
-            generate_wordcloud(df_result, f"WordCloud - {input_aspect}")
-        else:
-            st.warning("Please enter a comment!")
+            save_history([input_text], [aspect], sentiments, confidences)
 
-# Tab 2: CSV Upload
+            df_result = pd.DataFrame({
+                "text":[input_text],
+                "aspect":[aspect],
+                "sentiment":sentiments,
+                "confidence":confidences
+            })
+            st.subheader("Analysis Result")
+            st.write(f"**Text:** {input_text}")
+            st.write(f"**Aspect:** {aspect}")
+            st.write(f"**Sentiment:** {sentiments[0].capitalize()}")
+            st.write(f"**Confidence:** {confidences[0]:.2f}")
+            plot_sentiment_distribution(df_result, f"Sentiment - {aspect}")
+            generate_wordcloud(df_result, f"WordCloud - {aspect}")
+        else:
+            st.warning("Please paste some text!")
+
+# ---------- Tab 2: CSV Upload ----------
 with tab2:
     uploaded_file = st.file_uploader("Upload CSV (columns: text, optional aspect):", type=["csv"])
     if uploaded_file:
         df_csv = pd.read_csv(uploaded_file)
         if df_csv.shape[1] == 1:
             df_csv.columns = ["text"]
-            df_csv["aspect"] = "General"
+            df_csv["aspect"] = df_csv["text"].apply(detect_aspect)
         else:
             df_csv.columns = ["text","aspect"]
         sentiments, confidences = predict_sentiment(df_csv["text"].tolist())
@@ -135,7 +160,7 @@ with tab2:
             plot_sentiment_distribution(df_aspect, f"Sentiment - {aspect}")
             generate_wordcloud(df_aspect, f"WordCloud - {aspect}")
 
-# Tab 3: History
+# ---------- Tab 3: History ----------
 with tab3:
     df_history = get_history()
     if not df_history.empty:
