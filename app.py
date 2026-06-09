@@ -242,7 +242,7 @@ if page == "🏠 Analyse Comment":
                     st.markdown(
                         f"""<div style='background:{colors[s]};border-radius:12px;padding:1rem 1.25rem;margin-bottom:0.75rem'>
                         <span style='font-size:2rem'>{icons[s]}</span>
-                        <span style='font-size:1.3rem;font-weight:700;color:#000000;margin-left:10px'>{s}</span>
+                        <span style='font-size:1.3rem;font-weight:700;color:{text_colors[s]};margin-left:10px'>{s}</span>
                         <div style='font-size:12px;color:#555;margin-top:4px'>Confidence: {res['confidence']:.2%}</div>
                         </div>""",
                         unsafe_allow_html=True,
