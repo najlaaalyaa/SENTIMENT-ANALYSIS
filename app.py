@@ -32,6 +32,7 @@ c.execute('''CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 text TEXT,
                 sentiment TEXT,
+                aspect TEXT,
                 timestamp TEXT
             )''')
 conn.commit()
@@ -48,6 +49,21 @@ def load_model():
 tokenizer, model, device = load_model()
 labels = ["negative","neutral","positive"]
 
+# ------------------ Aspect Detection ------------------ #
+aspect_keywords = {
+    "Taste": ["rasa","manis","masin","pedas","asam","gurih","lembut"],
+    "General": ["bagus","best","ok","menarik","mudah","simple"],
+    "Cooking Steps": ["rebus","goreng","bakar","panaskan","campur","masukkan","adun"],
+    "Ingredients": ["bahan","tepung","gula","garam","telur","minyak","santan"]
+}
+
+def detect_aspect(text):
+    text_lower = text.lower()
+    for aspect, keywords in aspect_keywords.items():
+        if any(k in text_lower for k in keywords):
+            return aspect
+    return "General"
+
 # ------------------ Functions ------------------ #
 def predict_sentiment(texts):
     results = []
@@ -57,14 +73,14 @@ def predict_sentiment(texts):
             logits = model(**inputs).logits
             probs = F.softmax(logits, dim=-1)
             pred_label = labels[torch.argmax(probs)]
-        results.append((pred_label, confidence))
+        results.append(pred_label)
     return results
 
-def save_history(texts, sentiments):
+def save_history(texts, sentiments, aspects):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    for text, sentiment, conf in zip(texts, sentiments):
-        c.execute('INSERT INTO history (text,sentiment,timestamp) VALUES (?,?,?,?)',
-                  (text, sentiment, timestamp))
+    for text, sentiment, aspect in zip(texts, sentiments, aspects):
+        c.execute('INSERT INTO history (text,sentiment,aspect,timestamp) VALUES (?,?,?,?)',
+                  (text, sentiment, aspect, timestamp))
     conn.commit()
 
 def get_history():
@@ -92,13 +108,14 @@ with col1:
     input_text = st.text_area("Enter text here:")
     if st.button("Analyze"):
         if input_text.strip() != "":
-            preds = predict_sentiment([input_text])
-            sentiment, confidence = preds[0]
-            save_history([input_text],[sentiment])
+            sentiment = predict_sentiment([input_text])[0]
+            aspect = detect_aspect(input_text)
+            save_history([input_text],[sentiment],[aspect])
             
             st.markdown(f"**Sentiment:** {sentiment.capitalize()}")
+            st.markdown(f"**Aspect:** {aspect}")
             
-            df_display = pd.DataFrame({"text":[input_text],"sentiment":[sentiment]})
+            df_display = pd.DataFrame({"text":[input_text],"sentiment":[sentiment],"aspect":[aspect]})
             plot_sentiment_bar(df_display)
             plot_wordcloud(df_display)
         else:
@@ -112,6 +129,7 @@ with col2:
         st.markdown(f"**Latest Analysis:**")
         st.markdown(f"Text: {latest['text']}")
         st.markdown(f"Sentiment: {latest['sentiment'].capitalize()}")
+        st.markdown(f"Aspect: {latest['aspect']}")
         st.markdown(f"Timestamp: {latest['timestamp']}")
 
 st.markdown("### Recent History")
