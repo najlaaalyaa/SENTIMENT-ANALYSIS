@@ -95,12 +95,11 @@ with col1:
         if input_text.strip() != "":
             preds = predict_sentiment([input_text])
             sentiment, confidence = preds[0]
-            save_history([input_text],[sentiment],[confidence])
+            save_history([input_text],[sentiment])
             
             st.markdown(f"**Sentiment:** {sentiment.capitalize()}")
-            st.markdown(f"**Confidence:** {confidence:.2f}")
             
-            df_display = pd.DataFrame({"text":[input_text],"sentiment":[sentiment],"confidence":[confidence]})
+            df_display = pd.DataFrame({"text":[input_text],"sentiment":[sentiment]})
             plot_sentiment_bar(df_display)
             plot_wordcloud(df_display)
         else:
@@ -114,7 +113,6 @@ with col2:
         st.markdown(f"**Latest Analysis:**")
         st.markdown(f"Text: {latest['text']}")
         st.markdown(f"Sentiment: {latest['sentiment'].capitalize()}")
-        st.markdown(f"Confidence: {latest['confidence']:.2f}")
         st.markdown(f"Timestamp: {latest['timestamp']}")
 
 st.markdown("### Recent History")
