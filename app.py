@@ -2,14 +2,39 @@
 
 import streamlit as st
 import pandas as pd
+import sqlite3
+from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
 from wordcloud import WordCloud
-import sqlite3
-from datetime import datetime
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch.nn.functional as F
+
+# ------------------ Load mBERT ------------------ #
+@st.cache_resource
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
+    model = AutoModelForSequenceClassification.from_pretrained("bert-base-multilingual-cased", num_labels=3)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    return tokenizer, model, device
+
+tokenizer, model, device = load_model()
+labels = ["negative","neutral","positive"]
+
+# ------------------ Prediction ------------------ #
+def predict_sentiment(texts):
+    results = []
+    for text in texts:
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(device)
+        with torch.no_grad():
+            logits = model(**inputs).logits
+            probs = F.softmax(logits, dim=-1)
+            pred_label = labels[torch.argmax(probs)]
+        results.append(pred_label)
+    return results
+
 
 # ------------------ Page & Style ------------------ #
 st.set_page_config(page_title="Malay Sentiment Analyzer", layout="wide")
@@ -36,17 +61,6 @@ CREATE TABLE IF NOT EXISTS history (
 )
 ''')
 conn.commit()
-
-# ------------------ Load mBERT ------------------ #
-@st.cache_resource
-def load_model():
-    model_name = "ipankamal/mb-bert-sentiment-malay"  # replace with your fine-tuned model
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(model_name)
-    return tokenizer, model
-
-tokenizer, model = load_model()
-labels = ['negative', 'neutral', 'positive']
 
 # ------------------ Prediction ------------------ #
 def predict_sentiment(texts):
