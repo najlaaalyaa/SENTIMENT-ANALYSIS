@@ -254,7 +254,7 @@ with st.sidebar:
 # ═══════════════════════════════════════════════════════════════
 if page == "🏠 Analyse Comment":
     st.markdown("### 🏠 Analyse YouTube Comment")
-    st.caption("Enter a Malay or mixed Malay–English YouTube comment for sentiment and aspect analysis.")
+    st.caption("Enter a Malay or mixed Malay YouTube comment for sentiment and aspect analysis.")
     st.markdown("")
 
     col_in, col_out = st.columns([1, 1], gap="large")
