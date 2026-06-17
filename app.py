@@ -80,8 +80,21 @@ st.markdown("""
         color: #1B4D1B !important;
     }
 
-    /* Dataframe */
-    [data-testid="stDataFrame"] {
+    /* Dataframe — force light background and dark text in every cell/header */
+    [data-testid="stDataFrame"],
+    [data-testid="stDataFrame"] div,
+    [data-testid="stDataFrame"] table,
+    [data-testid="stDataFrame"] th,
+    [data-testid="stDataFrame"] td {
+        background-color: #ffffff !important;
+        color: #1a1a18 !important;
+    }
+    [data-testid="stDataFrame"] [role="columnheader"] {
+        background-color: #F0F4E8 !important;
+        color: #1a1a18 !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stDataFrame"] [role="gridcell"] {
         background-color: #ffffff !important;
         color: #1a1a18 !important;
     }
@@ -89,6 +102,29 @@ st.markdown("""
     /* Caption */
     .stCaption, .stCaption p {
         color: #666 !important;
+    }
+
+    /* Alert boxes (info / warning / success / error) — force readable text */
+    [data-testid="stAlert"] {
+        background-color: #FFF6D9 !important;
+    }
+    [data-testid="stAlert"] * {
+        color: #5a4600 !important;
+        background-color: transparent !important;
+    }
+    [data-testid="stAlertContentInfo"] *,
+    [data-testid="stAlertContentSuccess"] *,
+    [data-testid="stAlertContentWarning"] *,
+    [data-testid="stAlertContentError"] * {
+        color: inherit !important;
+    }
+
+    /* Plotly chart axis labels & tick text */
+    .js-plotly-plot .xtick text,
+    .js-plotly-plot .ytick text,
+    .js-plotly-plot .xtitle,
+    .js-plotly-plot .ytitle {
+        fill: #1a1a18 !important;
     }
 
     /* Cards */
@@ -436,7 +472,8 @@ elif page == "📊 Dashboard":
                 marker_colors=["#2E7D32","#BA7517","#E24B4A"], hole=0.45, textinfo="label+percent",
             ))
             pie.update_layout(margin=dict(t=10,b=10,l=10,r=10), height=280,
-                              showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                              showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              font=dict(color="#1a1a18"))
             st.plotly_chart(pie, use_container_width=True)
 
         with col_r:
@@ -451,6 +488,8 @@ elif page == "📊 Dashboard":
                                   yaxis_title="", xaxis_title="",
                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                   font=dict(color="#1a1a18"))
+            bar_fig.update_xaxes(tickfont=dict(color="#1a1a18"))
+            bar_fig.update_yaxes(tickfont=dict(color="#1a1a18"))
             st.plotly_chart(bar_fig, use_container_width=True)
 
         st.download_button("⬇️ Download all data CSV", data=df.to_csv(index=False).encode("utf-8"),
