@@ -80,28 +80,43 @@ st.markdown("""
         color: #1B4D1B !important;
     }
 
-    /* Dataframe — force light background and dark text in every cell/header */
-    [data-testid="stDataFrame"],
-    [data-testid="stDataFrame"] div,
-    [data-testid="stDataFrame"] table,
-    [data-testid="stDataFrame"] th,
-    [data-testid="stDataFrame"] td {
+    /* Dataframe — Streamlit renders this as a canvas (glide-data-grid), so we
+       theme the wrapper/toolbar chrome; cell text colour is controlled via
+       the dataframe theme passed from Python, not CSS. */
+    [data-testid="stDataFrame"] {
         background-color: #ffffff !important;
-        color: #1a1a18 !important;
+        border: 1px solid #d8e0cc !important;
+        border-radius: 8px !important;
     }
-    [data-testid="stDataFrame"] [role="columnheader"] {
-        background-color: #F0F4E8 !important;
-        color: #1a1a18 !important;
-        font-weight: 600 !important;
-    }
-    [data-testid="stDataFrame"] [role="gridcell"] {
+    [data-testid="stElementToolbar"] {
         background-color: #ffffff !important;
-        color: #1a1a18 !important;
+    }
+    [data-testid="stElementToolbarButton"] svg {
+        fill: #1a1a18 !important;
     }
 
     /* Caption */
     .stCaption, .stCaption p {
         color: #666 !important;
+    }
+
+    /* Download / generic buttons rendered as <a> or <button> with kind="secondary" */
+    .stDownloadButton > button,
+    [data-testid="stBaseButton-secondary"] {
+        background: #2E7D32 !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 500 !important;
+    }
+    .stDownloadButton > button:hover,
+    [data-testid="stBaseButton-secondary"]:hover {
+        background: #225C25 !important;
+        color: #ffffff !important;
+    }
+    .stDownloadButton > button *,
+    [data-testid="stBaseButton-secondary"] * {
+        color: #ffffff !important;
     }
 
     /* Alert boxes (info / warning / success / error) — force readable text */
@@ -388,7 +403,7 @@ elif page == "📂 Batch Analysis":
                 st.error("CSV must contain a column named `comment`.")
             else:
                 st.success(f"Loaded {len(df)} comments.")
-                st.dataframe(df.head(5), use_container_width=True)
+                st.dataframe(df.head(5), use_container_width=True, hide_index=True)
                 if st.button("🚀 Run Batch Analysis"):
                     clf = load_model()
                     results, bar = [], st.progress(0, text="Analysing…")
@@ -433,7 +448,7 @@ elif page == "📂 Batch Analysis":
         display.columns = ["Comment","Sentiment","Confidence","Aspects"]
         display["Confidence"] = display["Confidence"].apply(lambda x: f"{x:.0%}")
         display["Aspects"]    = display["Aspects"].apply(lambda x: ", ".join(x))
-        st.dataframe(display, use_container_width=True, height=300)
+        st.dataframe(display, use_container_width=True, height=300, hide_index=True)
         st.download_button("⬇️ Download results CSV", data=out.to_csv(index=False).encode("utf-8"),
                            file_name="sentiment_results.csv", mime="text/csv")
 
