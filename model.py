@@ -6,7 +6,7 @@ Used by app.py via import
 import re
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 
-# ── Cooking aspect keyword dictionary (Malay + English) ───────
+# ── Cooking aspect keyword dictionary (Malay) ───────
 ASPECTS = {
     "Taste / Rasa": [
         "sedap","lazat","lezat","rasa","masin","manis","masam","pahit","pedas",
