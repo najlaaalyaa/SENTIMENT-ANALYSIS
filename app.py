@@ -12,18 +12,18 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── CSS — light mode forced, all text visible ─────────────────
+# ── CSS — Green & Cream theme, light mode forced ───────────────
 st.markdown("""
 <style>
-    /* Force light background everywhere */
+    /* Force light cream background everywhere */
     .stApp {
-        background-color: #F7F8FC !important;
+        background-color: #FAFAF5 !important;
         color: #1a1a18 !important;
     }
 
     /* Sidebar */
     [data-testid="stSidebar"] {
-        background-color: #EEEDFE !important;
+        background-color: #F0F4E8 !important;
     }
     [data-testid="stSidebar"] * {
         color: #1a1a18 !important;
@@ -38,7 +38,7 @@ st.markdown("""
         color: #5a5a5a !important;
     }
     [data-testid="stSidebar"] h2 {
-        color: #26215C !important;
+        color: #1B4D1B !important;
     }
 
     /* Main content text */
@@ -51,33 +51,33 @@ st.markdown("""
 
     /* Tabs */
     .stTabs [data-baseweb="tab"] {
-        color: #534AB7 !important;
+        color: #2E7D32 !important;
     }
 
-    /* Text area & inputs — light background */
+    /* Text area & inputs — cream background */
     textarea, input, [data-baseweb="textarea"] textarea {
         background-color: #ffffff !important;
         color: #1a1a18 !important;
-        border: 1px solid #ccc !important;
+        border: 1px solid #cdd8c0 !important;
     }
 
     /* Buttons */
     .stButton > button {
-        background: #534AB7 !important;
+        background: #2E7D32 !important;
         color: #ffffff !important;
         border: none !important;
         border-radius: 8px !important;
         font-weight: 500 !important;
     }
     .stButton > button:hover {
-        background: #3C3489 !important;
+        background: #225C25 !important;
         color: #ffffff !important;
     }
 
     /* Code blocks */
     .stCode, code, pre {
-        background-color: #f0eeff !important;
-        color: #26215C !important;
+        background-color: #F0F4E8 !important;
+        color: #1B4D1B !important;
     }
 
     /* Dataframe */
@@ -96,22 +96,22 @@ st.markdown("""
         background: #ffffff;
         border-radius: 12px;
         padding: 1rem 1.25rem;
-        border: 1px solid rgba(83,74,183,0.15);
+        border: 1px solid rgba(46,125,50,0.15);
         text-align: center;
     }
     .metric-num   { font-size: 2rem; font-weight: 700; color: #1a1a18; }
     .metric-label { font-size: 12px; color: #666; margin-top: 2px; }
 
     /* Sentiment badges */
-    .badge-Positive { background:#EAF3DE; color:#27500A; padding:3px 12px; border-radius:99px; font-size:12px; font-weight:600; }
+    .badge-Positive { background:#E1EFD9; color:#1B4D1B; padding:3px 12px; border-radius:99px; font-size:12px; font-weight:600; }
     .badge-Neutral  { background:#FAEEDA; color:#633806; padding:3px 12px; border-radius:99px; font-size:12px; font-weight:600; }
     .badge-Negative { background:#FCEBEB; color:#791F1F; padding:3px 12px; border-radius:99px; font-size:12px; font-weight:600; }
 
     /* Aspect tags */
     .aspect-tag {
         display: inline-block;
-        background: #EEEDFE;
-        color: #534AB7;
+        background: #E1EFD9;
+        color: #2E7D32;
         padding: 3px 10px;
         border-radius: 99px;
         font-size: 11px;
@@ -124,7 +124,7 @@ st.markdown("""
         background: #ffffff;
         border-radius: 12px;
         padding: 1.25rem;
-        border: 1px solid rgba(83,74,183,0.12);
+        border: 1px solid rgba(46,125,50,0.12);
         margin-bottom: 0.75rem;
         color: #1a1a18;
     }
@@ -135,7 +135,7 @@ st.markdown("""
 
     /* Progress bar */
     .stProgress > div > div {
-        background-color: #534AB7 !important;
+        background-color: #2E7D32 !important;
     }
 
     /* Info / warning / success boxes */
@@ -284,8 +284,8 @@ if page == "🏠 Analyse Comment":
 
                     s = res["sentiment"]
                     icons  = {"Positive": "😊", "Neutral": "😐", "Negative": "😞"}
-                    colors = {"Positive": "#EAF3DE", "Neutral": "#FAEEDA", "Negative": "#FCEBEB"}
-                    tcols  = {"Positive": "#27500A", "Neutral": "#633806", "Negative": "#791F1F"}
+                    colors = {"Positive": "#E1EFD9", "Neutral": "#FAEEDA", "Negative": "#FCEBEB"}
+                    tcols  = {"Positive": "#1B4D1B", "Neutral": "#633806", "Negative": "#791F1F"}
 
                     st.markdown(
                         f"""<div style='background:{colors[s]};border-radius:12px;
@@ -389,7 +389,7 @@ elif page == "📂 Batch Analysis":
         neu = (out["sentiment"]=="Neutral").sum()
         neg = (out["sentiment"]=="Negative").sum()
         c1,c2,c3 = st.columns(3)
-        c1.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#3B6D11'>{pos}</div><div class='metric-label'>Positive</div></div>", unsafe_allow_html=True)
+        c1.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#1B4D1B'>{pos}</div><div class='metric-label'>Positive</div></div>", unsafe_allow_html=True)
         c2.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#854F0B'>{neu}</div><div class='metric-label'>Neutral</div></div>", unsafe_allow_html=True)
         c3.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#A32D2D'>{neg}</div><div class='metric-label'>Negative</div></div>", unsafe_allow_html=True)
         st.markdown("")
@@ -402,7 +402,7 @@ elif page == "📂 Batch Analysis":
                            file_name="sentiment_results.csv", mime="text/csv")
 
 # ═══════════════════════════════════════════════════════════════
-# PAGE 3 — DASHBOARD
+# PAGE 3 — DASHBOARD  (Confidence histogram & Aspect×Sentiment heatmap removed)
 # ═══════════════════════════════════════════════════════════════
 elif page == "📊 Dashboard":
     st.markdown("### 📊 Analytics Dashboard")
@@ -422,7 +422,7 @@ elif page == "📊 Dashboard":
 
         c1,c2,c3,c4 = st.columns(4)
         c1.markdown(f"<div class='metric-card'><div class='metric-num'>{total}</div><div class='metric-label'>Total comments</div></div>", unsafe_allow_html=True)
-        c2.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#3B6D11'>{pos}</div><div class='metric-label'>Positive</div></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#1B4D1B'>{pos}</div><div class='metric-label'>Positive</div></div>", unsafe_allow_html=True)
         c3.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#854F0B'>{neu}</div><div class='metric-label'>Neutral</div></div>", unsafe_allow_html=True)
         c4.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#A32D2D'>{neg}</div><div class='metric-label'>Negative</div></div>", unsafe_allow_html=True)
 
@@ -433,7 +433,7 @@ elif page == "📊 Dashboard":
             st.markdown("**Sentiment distribution**")
             pie = go.Figure(go.Pie(
                 labels=["Positive","Neutral","Negative"], values=[pos,neu,neg],
-                marker_colors=["#639922","#BA7517","#E24B4A"], hole=0.45, textinfo="label+percent",
+                marker_colors=["#2E7D32","#BA7517","#E24B4A"], hole=0.45, textinfo="label+percent",
             ))
             pie.update_layout(margin=dict(t=10,b=10,l=10,r=10), height=280,
                               showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
@@ -446,35 +446,12 @@ elif page == "📊 Dashboard":
                 for a in row.get("aspects", []):
                     aspect_counts[a] = aspect_counts.get(a, 0) + 1
             aspect_df = pd.DataFrame(sorted(aspect_counts.items(), key=lambda x:-x[1]), columns=["Aspect","Count"])
-            bar_fig = px.bar(aspect_df, x="Count", y="Aspect", orientation="h", color_discrete_sequence=["#7F77DD"])
+            bar_fig = px.bar(aspect_df, x="Count", y="Aspect", orientation="h", color_discrete_sequence=["#2E7D32"])
             bar_fig.update_layout(margin=dict(t=10,b=10,l=10,r=10), height=280,
                                   yaxis_title="", xaxis_title="",
                                   paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                   font=dict(color="#1a1a18"))
             st.plotly_chart(bar_fig, use_container_width=True)
-
-        st.markdown("**Confidence score distribution**")
-        hist = px.histogram(df, x="confidence", nbins=20, color="sentiment",
-                            color_discrete_map={"Positive":"#639922","Neutral":"#BA7517","Negative":"#E24B4A"})
-        hist.update_layout(margin=dict(t=10,b=10), height=250, bargap=0.05,
-                           paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font=dict(color="#1a1a18"))
-        st.plotly_chart(hist, use_container_width=True)
-
-        st.markdown("**Aspect × Sentiment breakdown**")
-        heat_data = {}
-        for row in all_data:
-            for a in row.get("aspects",[]):
-                if a not in heat_data:
-                    heat_data[a] = {"Positive":0,"Neutral":0,"Negative":0}
-                heat_data[a][row["sentiment"]] += 1
-        if heat_data:
-            heat_df = pd.DataFrame(heat_data).T.fillna(0).astype(int)[["Positive","Neutral","Negative"]]
-            fig_heat = px.imshow(heat_df, color_continuous_scale=["#FCEBEB","#FAEEDA","#EAF3DE"],
-                                 text_auto=True, aspect="auto")
-            fig_heat.update_layout(margin=dict(t=10,b=10), height=300,
-                                   paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#1a1a18"))
-            st.plotly_chart(fig_heat, use_container_width=True)
 
         st.download_button("⬇️ Download all data CSV", data=df.to_csv(index=False).encode("utf-8"),
                            file_name="dashboard_data.csv", mime="text/csv")
