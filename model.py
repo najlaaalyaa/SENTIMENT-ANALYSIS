@@ -43,8 +43,8 @@ ASPECTS = {
 def load_model():
     """Load mBERT multilingual sentiment model from HuggingFace."""
     MODEL_NAME = "nlptown/bert-base-multilingual-uncased-sentiment"
-    tokenizer  = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model      = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+    tokenizer  = AutoTokenizer.from_pretrained("qiyuw/WSPAlign-mbert-base")
+    model      = AutoModelForSequenceClassification.from_pretrained("qiyuw/WSPAlign-mbert-base")
     classifier = pipeline(
         "text-classification",
         model=model,
