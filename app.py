@@ -201,19 +201,39 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Lazy imports ──────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading mBERT model…")
+# Loads the FINE-TUNED model bundled as mbert_sentiment_model.pkl (committed via Git LFS),
+# instead of downloading the base nlptown/bert-base-multilingual-uncased-sentiment model.
+PKL_PATH = "mbert_sentiment_model.pkl"
+
+@st.cache_resource(show_spinner="Loading fine-tuned mBERT model…")
 def load_model():
+    import pickle
     from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-    MODEL_NAME = "nlptown/bert-base-multilingual-uncased-sentiment"
-    tokenizer  = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model      = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+
+    with open(PKL_PATH, "rb") as f:
+        bundle = pickle.load(f)
+
+    model = AutoModelForSequenceClassification.from_pretrained(
+        bundle["model_name"],
+        num_labels=3,
+        id2label=bundle["id2label"],
+        label2id=bundle["label2id"],
+        ignore_mismatched_sizes=True,
+    )
+    # state dict was saved in fp16 to shrink the pickle — cast back to fp32 for stable CPU inference
+    state_dict = {k: v.float() for k, v in bundle["model_state_dict"].items()}
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    tokenizer = AutoTokenizer.from_pretrained(bundle["tokenizer_name"])
+
     classifier = pipeline(
         "text-classification",
         model=model,
         tokenizer=tokenizer,
         device=-1,
         truncation=True,
-        max_length=512,
+        max_length=bundle.get("max_len", 128),
     )
     return classifier
 
@@ -249,10 +269,11 @@ ASPECTS = {
 }
 
 def map_label(label: str, score: float):
-    star = int(label.split()[0])
-    if star >= 4:   sentiment = "Positive"
-    elif star == 3: sentiment = "Neutral"
-    else:           sentiment = "Negative"
+    # Fine-tuned model already outputs "negative" / "neutral" / "positive" directly
+    # (from LABEL2ID/ID2LABEL used during training) — no star parsing needed anymore.
+    sentiment = label.strip().capitalize()
+    if sentiment not in ("Positive", "Neutral", "Negative"):
+        sentiment = "Neutral"  # safe fallback if an unexpected label ever comes through
     return sentiment, round(score, 3)
 
 def extract_aspects(text: str) -> list:
@@ -294,7 +315,7 @@ with st.sidebar:
     )
     st.markdown("---")
     st.markdown(
-        "<small>Powered by mBERT<br>(bert-base-multilingual-uncased-sentiment)"
+        "<small>Powered by fine-tuned mBERT<br>(bert-base-multilingual-uncased-sentiment)"
         "<br><br>UiTM Final Year Project 2026"
         "<br>Nur Najlaa' Alyaa' Binti Roslan</small>",
         unsafe_allow_html=True,
@@ -528,17 +549,17 @@ elif page == "ℹ️ About":
     | Component | Technology |
     |---|---|
     | UI Framework | Streamlit |
-    | Sentiment Model | mBERT (`bert-base-multilingual-uncased-sentiment`) |
+    | Sentiment Model | Fine-tuned mBERT (`bert-base-multilingual-uncased-sentiment`, fine-tuned on Malay YouTube cooking comments) |
     | Aspect Extraction | Keyword-based (Malay cooking vocabulary) |
     | Data Collection | Apify YouTube Comments Scraper + YouTube Data API |
     | Visualisation | Plotly |
 
     #### Sentiment labels
-    | Label | mBERT Stars | Description |
-    |---|---|---|
-    | ✅ Positive | 4–5 stars | Viewer liked the video / recipe |
-    | 😐 Neutral  | 3 stars   | Mixed or no clear opinion |
-    | ❌ Negative | 1–2 stars | Viewer disliked or criticised |
+    | Label | Description |
+    |---|---|
+    | ✅ Positive | Viewer liked the video / recipe |
+    | 😐 Neutral  | Mixed or no clear opinion |
+    | ❌ Negative | Viewer disliked or criticised |
 
     #### Cooking aspects detected
     - **Taste / Rasa** — sedap, lazat, pedas, manis …
