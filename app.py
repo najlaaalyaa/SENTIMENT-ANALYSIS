@@ -219,7 +219,7 @@ with st.sidebar:
     )
     st.markdown("---")
     st.markdown(
-        "<small>Powered by custom fine-tuned mBERT<br>(Hugging Face: nvjlaa/mBERT)"
+        "<small>Powered by custom fine-tuned mBERT<br>(Hugging Face: nvjlaa/mBERT — joint aspect-sentiment model)"
         "<br><br>UiTM Final Year Project 2026"
         "<br>Nur Najlaa' Alyaa' Binti Roslan</small>",
         unsafe_allow_html=True,
@@ -280,7 +280,7 @@ if page == "🏠 Analyse Comment":
                     st.code(res["clean"], language=None)
 
                 except Exception as e:
-                    st.error(f"Error: {e}\n\nMake sure `transformers` and `torch` are installed.")
+                    st.error(f"Model loading or prediction error: {e}")
 
         elif analyse_btn:
             st.warning("Please enter a comment first.")
