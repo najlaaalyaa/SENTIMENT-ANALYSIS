@@ -461,7 +461,7 @@ elif page == "ℹ️ About":
     st.markdown("### ℹ️ About This System")
     st.markdown("""
     **Sentiment Analysis of YouTube Comments**
-    — Nur Najlaa' Alyaa' Binti Roslan (2023436326), UiTM, January 2026
+    — Nur Najlaa' Alyaa' Binti Roslan (2023436326), UiTM, July 2026
 
     ---
 
@@ -474,7 +474,7 @@ elif page == "ℹ️ About":
     | UI Framework | Streamlit |
     | Sentiment Model | Custom fine-tuned mBERT (`nvjlaa/mBERT`) |
     | Aspect Extraction | Keyword-based (Malay cooking vocabulary) |
-    | Data Collection | Apify YouTube Comments Scraper + YouTube Data API |
+    | Data Collection | Apify YouTube Comments Scraper |
     | Visualisation | Plotly |
 
     #### Sentiment labels
