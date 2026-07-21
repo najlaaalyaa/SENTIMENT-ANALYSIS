@@ -1,9 +1,10 @@
 """
-model.py — Custom fine-tuned mBERT sentiment classification
-and single-aspect extraction for SentiMalay.
+model.py — Load the trained joint mBERT aspect-sentiment model
+from Hugging Face and analyse one comment at a time.
 """
 
 import os
+import pickle
 import re
 from functools import lru_cache
 from typing import Any
@@ -16,11 +17,14 @@ from transformers import (
     AutoTokenizer,
 )
 
-# Hugging Face repository containing the trained checkpoint.
+# ============================================================
+# HUGGING FACE MODEL LOCATION
+# ============================================================
 HF_REPO_ID = "nvjlaa/mBERT"
-HF_MODEL_FILENAME = "mbert_sentiment_model.pkl"
+HF_MODEL_FILENAME = "mbert_aspect_sentiment_model.pkl"
 
-# Exactly one of these aspects is assigned to each comment.
+# These are used only when the trained output label contains sentiment
+# but does not contain an aspect name.
 ASPECTS = {
     "Taste / Rasa": [
         "sedap", "lazat", "lezat", "rasa", "masin", "manis", "masam",
@@ -31,16 +35,16 @@ ASPECTS = {
     ],
     "Ingredients / Bahan": [
         "bahan", "sukatan", "resepi", "resipi", "ramuan", "ganti",
-        "ingredient", "recipe", "substitute", "measurement", "quantity",
-        "amount", "portion", "spice", "rempah", "santan", "minyak",
-        "garam", "gula", "tepung", "sayur", "daging", "ayam", "ikan",
-        "udang", "telur",
+        "ingredient", "ingredients", "recipe", "substitute", "measurement",
+        "quantity", "amount", "portion", "spice", "rempah", "santan",
+        "minyak", "garam", "gula", "tepung", "sayur", "daging", "ayam",
+        "ikan", "udang", "telur",
     ],
     "Cooking Steps / Langkah": [
         "cara", "langkah", "kaedah", "teknik", "proses", "mudah", "susah",
-        "sukar", "method", "step", "process", "easy", "hard", "difficult",
-        "simple", "follow", "instructions", "tutorial", "guide", "demo",
-        "ikut", "faham", "jelas", "peringkat", "prosedur", "arahan",
+        "sukar", "method", "step", "steps", "process", "easy", "hard",
+        "difficult", "simple", "follow", "instructions", "tutorial", "guide",
+        "demo", "ikut", "faham", "jelas", "peringkat", "prosedur", "arahan",
     ],
     "Time / Masa": [
         "lama", "cepat", "lambat", "minit", "jam", "masa", "duration",
@@ -59,7 +63,6 @@ ASPECTS = {
     ],
 }
 
-# Used when two aspects obtain the same score.
 ASPECT_PRIORITY = [
     "Taste / Rasa",
     "Ingredients / Bahan",
@@ -69,133 +72,401 @@ ASPECT_PRIORITY = [
     "Texture / Tekstur",
 ]
 
+ASPECT_ALIASES = {
+    "taste": "Taste / Rasa",
+    "rasa": "Taste / Rasa",
+    "ingredient": "Ingredients / Bahan",
+    "ingredients": "Ingredients / Bahan",
+    "bahan": "Ingredients / Bahan",
+    "cooking step": "Cooking Steps / Langkah",
+    "cooking steps": "Cooking Steps / Langkah",
+    "step": "Cooking Steps / Langkah",
+    "steps": "Cooking Steps / Langkah",
+    "langkah": "Cooking Steps / Langkah",
+    "time": "Time / Masa",
+    "masa": "Time / Masa",
+    "presentation": "Presentation / Persembahan",
+    "persembahan": "Presentation / Persembahan",
+    "texture": "Texture / Tekstur",
+    "tekstur": "Texture / Tekstur",
+    "general": "General",
+}
 
+
+# ============================================================
+# CHECKPOINT LOADING
+# ============================================================
 def _normalise_id2label(raw_mapping: Any) -> dict[int, str]:
-    """Convert checkpoint label keys to integer class IDs."""
+    """Convert label mapping keys to integers."""
     if not isinstance(raw_mapping, dict):
         return {}
 
-    mapping: dict[int, str] = {}
+    output: dict[int, str] = {}
+
     for key, value in raw_mapping.items():
         try:
-            mapping[int(key)] = str(value)
+            output[int(key)] = str(value)
         except (TypeError, ValueError):
             continue
-    return mapping
+
+    return output
 
 
 def _normalise_label2id(raw_mapping: Any) -> dict[str, int]:
-    """Convert checkpoint label values to integer class IDs."""
+    """Convert label mapping values to integers."""
     if not isinstance(raw_mapping, dict):
         return {}
 
-    mapping: dict[str, int] = {}
+    output: dict[str, int] = {}
+
     for key, value in raw_mapping.items():
         try:
-            mapping[str(key)] = int(value)
+            output[str(key)] = int(value)
         except (TypeError, ValueError):
             continue
-    return mapping
+
+    return output
 
 
-def _load_torch_checkpoint(checkpoint_path: str) -> dict:
-    """
-    Load the trusted checkpoint created during training.
+def _mapping_from_classes(classes: Any) -> dict[int, str]:
+    """Create id2label from a list, NumPy array, or label encoder."""
+    if classes is None:
+        return {}
 
-    The fallback keeps compatibility with older PyTorch versions that do not
-    accept the weights_only argument.
-    """
+    if hasattr(classes, "classes_"):
+        classes = classes.classes_
+
     try:
-        checkpoint = torch.load(
-            checkpoint_path,
-            map_location="cpu",
-            weights_only=False,
-        )
+        values = list(classes)
     except TypeError:
-        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+        return {}
 
-    if not isinstance(checkpoint, dict):
-        raise TypeError(
-            "The downloaded .pkl file is not the expected checkpoint dictionary."
+    return {index: str(value) for index, value in enumerate(values)}
+
+
+def _load_artifact(file_path: str) -> Any:
+    """
+    Load a trusted model artifact.
+
+    It first tries torch.load(), then pickle.load(). This supports checkpoints
+    saved using either torch.save(...) or pickle.dump(...).
+    """
+    with open(file_path, "rb") as file:
+        first_bytes = file.read(200)
+
+    if first_bytes.startswith(b"version https://git-lfs.github.com/spec/v1"):
+        raise RuntimeError(
+            "Only a Git LFS pointer was downloaded instead of the real model. "
+            "Add `hf-xet` to requirements.txt and reboot the Streamlit app."
         )
 
-    required = {"model_state_dict", "model_name"}
-    missing = required.difference(checkpoint.keys())
-    if missing:
-        raise KeyError(
-            "Checkpoint is missing required field(s): "
-            + ", ".join(sorted(missing))
+    torch_error = None
+
+    try:
+        try:
+            return torch.load(
+                file_path,
+                map_location="cpu",
+                weights_only=False,
+            )
+        except TypeError:
+            return torch.load(file_path, map_location="cpu")
+    except Exception as error:
+        torch_error = error
+
+    try:
+        with open(file_path, "rb") as file:
+            return pickle.load(file)
+    except Exception as pickle_error:
+        raise RuntimeError(
+            "The Hugging Face model file could not be loaded. "
+            f"torch.load error: {torch_error}. "
+            f"pickle.load error: {pickle_error}."
+        ) from pickle_error
+
+
+def _find_value(mapping: dict, possible_keys: list[str], default=None):
+    """Return the first existing value from several possible checkpoint keys."""
+    for key in possible_keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return default
+
+
+def _build_runtime(artifact: Any) -> dict:
+    """
+    Convert the downloaded artifact into a runtime containing:
+    model, tokenizer, id2label, and max_len.
+    """
+
+    # --------------------------------------------------------
+    # Case 1: checkpoint dictionary
+    # --------------------------------------------------------
+    if isinstance(artifact, dict):
+        # The file may already contain complete model and tokenizer objects.
+        complete_model = _find_value(
+            artifact,
+            ["model", "trained_model", "classifier_model"],
+        )
+        complete_tokenizer = _find_value(
+            artifact,
+            ["tokenizer", "trained_tokenizer"],
         )
 
-    return checkpoint
+        if isinstance(complete_model, torch.nn.Module):
+            model = complete_model
+            model.eval()
+
+            model_name = _find_value(
+                artifact,
+                [
+                    "model_name",
+                    "base_model_name",
+                    "pretrained_model_name",
+                    "tokenizer_name",
+                ],
+                getattr(getattr(model, "config", None), "_name_or_path", None),
+            )
+
+            tokenizer = complete_tokenizer
+            if tokenizer is None:
+                if not model_name:
+                    raise KeyError(
+                        "The checkpoint contains a model but no tokenizer or "
+                        "base model name."
+                    )
+                tokenizer = AutoTokenizer.from_pretrained(str(model_name))
+
+            id2label = _normalise_id2label(
+                _find_value(artifact, ["id2label", "id_to_label"], {})
+            )
+
+            if not id2label:
+                id2label = _normalise_id2label(
+                    getattr(getattr(model, "config", None), "id2label", {})
+                )
+
+            if not id2label:
+                id2label = _mapping_from_classes(
+                    _find_value(
+                        artifact,
+                        [
+                            "classes",
+                            "class_names",
+                            "labels",
+                            "label_encoder",
+                            "joint_label_encoder",
+                        ],
+                    )
+                )
+
+            if not id2label:
+                raise KeyError(
+                    "No class label mapping was found in the model checkpoint."
+                )
+
+            return {
+                "model": model,
+                "tokenizer": tokenizer,
+                "id2label": id2label,
+                "max_len": int(
+                    _find_value(
+                        artifact,
+                        ["max_len", "max_length", "sequence_length"],
+                        512,
+                    )
+                ),
+            }
+
+        # The common checkpoint format:
+        # {
+        #   "model_state_dict": ...,
+        #   "model_name": ...,
+        #   "id2label": ...,
+        # }
+        state_dict = _find_value(
+            artifact,
+            [
+                "model_state_dict",
+                "state_dict",
+                "model_weights",
+                "weights",
+            ],
+        )
+
+        if state_dict is None:
+            raise KeyError(
+                "The checkpoint does not contain `model_state_dict`, "
+                "`state_dict`, or a complete PyTorch model object."
+            )
+
+        model_name = _find_value(
+            artifact,
+            [
+                "model_name",
+                "base_model_name",
+                "pretrained_model_name",
+                "tokenizer_name",
+            ],
+        )
+
+        if not model_name:
+            raise KeyError(
+                "The checkpoint does not contain the base model name. "
+                "Save a field such as `model_name` when exporting the model."
+            )
+
+        id2label = _normalise_id2label(
+            _find_value(artifact, ["id2label", "id_to_label"], {})
+        )
+        label2id = _normalise_label2id(
+            _find_value(artifact, ["label2id", "label_to_id"], {})
+        )
+
+        if not id2label and label2id:
+            id2label = {
+                class_id: label
+                for label, class_id in label2id.items()
+            }
+
+        if not id2label:
+            id2label = _mapping_from_classes(
+                _find_value(
+                    artifact,
+                    [
+                        "classes",
+                        "class_names",
+                        "labels",
+                        "label_encoder",
+                        "joint_label_encoder",
+                    ],
+                )
+            )
+
+        if not id2label:
+            raise KeyError(
+                "The checkpoint does not contain its output class labels. "
+                "Add `id2label`, `classes`, or a saved label encoder."
+            )
+
+        if not label2id:
+            label2id = {
+                label: class_id
+                for class_id, label in id2label.items()
+            }
+
+        config = AutoConfig.from_pretrained(
+            str(model_name),
+            num_labels=len(id2label),
+            id2label=id2label,
+            label2id=label2id,
+        )
+
+        model = AutoModelForSequenceClassification.from_config(config)
+
+        # Remove "module." prefixes created by DataParallel.
+        if state_dict and all(
+            str(key).startswith("module.")
+            for key in state_dict.keys()
+        ):
+            state_dict = {
+                str(key).removeprefix("module."): value
+                for key, value in state_dict.items()
+            }
+
+        try:
+            model.load_state_dict(state_dict, strict=True)
+        except RuntimeError as error:
+            raise RuntimeError(
+                "The checkpoint weights do not match "
+                "AutoModelForSequenceClassification. The training notebook "
+                "may have used a custom model class or a different number of "
+                "labels. Save the full custom model object or export the model "
+                "using save_pretrained(). "
+                f"Original error: {error}"
+            ) from error
+
+        model.eval()
+        tokenizer_name = _find_value(
+            artifact,
+            ["tokenizer_name", "model_name", "base_model_name"],
+            model_name,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_name))
+
+        return {
+            "model": model,
+            "tokenizer": tokenizer,
+            "id2label": id2label,
+            "max_len": int(
+                _find_value(
+                    artifact,
+                    ["max_len", "max_length", "sequence_length"],
+                    512,
+                )
+            ),
+        }
+
+    # --------------------------------------------------------
+    # Case 2: the file directly contains a PyTorch model object
+    # --------------------------------------------------------
+    if isinstance(artifact, torch.nn.Module):
+        model = artifact
+        model.eval()
+
+        config = getattr(model, "config", None)
+        model_name = getattr(config, "_name_or_path", None)
+        id2label = _normalise_id2label(
+            getattr(config, "id2label", {})
+        )
+
+        if not model_name:
+            raise KeyError(
+                "The saved model object does not contain a base model name."
+            )
+
+        if not id2label:
+            raise KeyError(
+                "The saved model object does not contain id2label."
+            )
+
+        tokenizer = AutoTokenizer.from_pretrained(str(model_name))
+
+        return {
+            "model": model,
+            "tokenizer": tokenizer,
+            "id2label": id2label,
+            "max_len": 512,
+        }
+
+    raise TypeError(
+        "Unsupported model artifact. Expected a checkpoint dictionary "
+        "or PyTorch model object."
+    )
 
 
 @lru_cache(maxsize=1)
 def load_model() -> dict:
     """
-    Download the trained checkpoint from Hugging Face, reconstruct the mBERT
-    architecture, load the fine-tuned weights, and cache the result.
+    Download mbert_aspect_sentiment_model.pkl from Hugging Face once,
+    load it, and cache it for the Streamlit session.
     """
-    checkpoint_path = hf_hub_download(
+    downloaded_path = hf_hub_download(
         repo_id=HF_REPO_ID,
         filename=HF_MODEL_FILENAME,
         repo_type="model",
         token=os.getenv("HF_TOKEN") or None,
     )
 
-    checkpoint = _load_torch_checkpoint(checkpoint_path)
-
-    model_name = str(checkpoint["model_name"])
-    id2label = _normalise_id2label(checkpoint.get("id2label"))
-    label2id = _normalise_label2id(checkpoint.get("label2id"))
-
-    if not id2label and label2id:
-        id2label = {class_id: label for label, class_id in label2id.items()}
-
-    if not label2id and id2label:
-        label2id = {label: class_id for class_id, label in id2label.items()}
-
-    if not id2label:
-        # Fallback only. The checkpoint's own mapping is preferred.
-        id2label = {0: "Negative", 1: "Neutral", 2: "Positive"}
-        label2id = {label: class_id for class_id, label in id2label.items()}
-
-    num_labels = len(id2label)
-
-    # Build the model architecture from its configuration only.
-    # The trained weights are then loaded from model_state_dict.
-    config = AutoConfig.from_pretrained(
-        model_name,
-        num_labels=num_labels,
-        id2label=id2label,
-        label2id=label2id,
-    )
-    model = AutoModelForSequenceClassification.from_config(config)
-
-    state_dict = checkpoint["model_state_dict"]
-
-    # Support checkpoints created with torch.nn.DataParallel.
-    if state_dict and all(str(key).startswith("module.") for key in state_dict):
-        state_dict = {
-            str(key).removeprefix("module."): value
-            for key, value in state_dict.items()
-        }
-
-    model.load_state_dict(state_dict, strict=True)
-    model.eval()
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    return {
-        "model": model,
-        "tokenizer": tokenizer,
-        "id2label": id2label,
-        "max_len": int(checkpoint.get("max_len", 512)),
-    }
+    artifact = _load_artifact(downloaded_path)
+    return _build_runtime(artifact)
 
 
+# ============================================================
+# TEXT PROCESSING AND INFERENCE
+# ============================================================
 def preprocess(text: str) -> str:
-    """Clean a raw YouTube comment using the same style as the application."""
+    """Clean a raw YouTube comment."""
     text = re.sub(r"http\S+|www\S+", "", str(text))
     text = re.sub(r"@\w+", "", text)
     text = re.sub(r"[^\w\s',.!?]", " ", text)
@@ -203,24 +474,90 @@ def preprocess(text: str) -> str:
     return text.lower()
 
 
-def _canonical_sentiment(raw_label: str, predicted_id: int) -> str:
-    """Return one of Positive, Neutral, or Negative."""
-    label = str(raw_label).strip().lower()
+def _keyword_matches(text: str, keyword: str) -> bool:
+    """Match a complete word or phrase."""
+    pattern = rf"(?<!\w){re.escape(keyword.lower())}(?!\w)"
+    return re.search(pattern, text.lower()) is not None
 
-    if "positive" in label:
+
+def extract_one_aspect(text: str) -> str:
+    """
+    Return exactly one aspect.
+
+    This is used as a fallback when the trained output label does not include
+    an aspect. The aspect with the highest keyword score is selected.
+    """
+    scores: dict[str, int] = {}
+
+    for aspect in ASPECT_PRIORITY:
+        matches = {
+            keyword.lower()
+            for keyword in ASPECTS[aspect]
+            if _keyword_matches(text, keyword)
+        }
+
+        scores[aspect] = sum(
+            2 if " " in keyword else 1
+            for keyword in matches
+        )
+
+    best_aspect = max(
+        ASPECT_PRIORITY,
+        key=lambda aspect: (
+            scores[aspect],
+            -ASPECT_PRIORITY.index(aspect),
+        ),
+    )
+
+    return best_aspect if scores[best_aspect] > 0 else "General"
+
+
+def _canonical_sentiment(label: str) -> str | None:
+    """Extract Positive, Neutral, or Negative from a trained class label."""
+    value = str(label).strip().lower()
+
+    if "positive" in value or re.search(r"(^|[^a-z])pos([^a-z]|$)", value):
         return "Positive"
-    if "neutral" in label:
+
+    if "neutral" in value or re.search(r"(^|[^a-z])neu([^a-z]|$)", value):
         return "Neutral"
-    if "negative" in label:
+
+    if "negative" in value or re.search(r"(^|[^a-z])neg([^a-z]|$)", value):
         return "Negative"
 
-    # Fallback for LABEL_0/LABEL_1/LABEL_2-style labels.
-    fallback = {0: "Negative", 1: "Neutral", 2: "Positive"}
-    return fallback.get(predicted_id, str(raw_label))
+    return None
 
 
-def predict_sentiment(clean_text: str, classifier: dict) -> tuple[str, float]:
-    """Run inference using the fine-tuned model loaded from the checkpoint."""
+def _aspect_from_joint_label(label: str) -> str | None:
+    """Extract an aspect name from a joint aspect-sentiment class label."""
+    cleaned = str(label).strip().lower()
+    cleaned = re.sub(
+        r"\b(positive|neutral|negative|pos|neu|neg)\b",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(r"[_|:/\\\-]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    # Prefer longer aliases first.
+    for alias in sorted(ASPECT_ALIASES, key=len, reverse=True):
+        if re.search(
+            rf"(?<!\w){re.escape(alias)}(?!\w)",
+            cleaned,
+        ):
+            return ASPECT_ALIASES[alias]
+
+    return None
+
+
+def predict_joint(
+    clean_text: str,
+    classifier: dict,
+) -> tuple[str, str, float, str]:
+    """
+    Predict one trained output class and convert it into:
+    sentiment, aspect, confidence, and raw model label.
+    """
     model = classifier["model"]
     tokenizer = classifier["tokenizer"]
     id2label = classifier["id2label"]
@@ -235,70 +572,65 @@ def predict_sentiment(clean_text: str, classifier: dict) -> tuple[str, float]:
     )
 
     with torch.inference_mode():
-        logits = model(**encoded).logits
-        probabilities = torch.softmax(logits, dim=-1)[0]
+        output = model(**encoded)
+
+        if not hasattr(output, "logits"):
+            raise TypeError(
+                "The loaded model output does not contain `logits`."
+            )
+
+        probabilities = torch.softmax(output.logits, dim=-1)[0]
 
     predicted_id = int(torch.argmax(probabilities).item())
     confidence = float(probabilities[predicted_id].item())
-    raw_label = id2label.get(predicted_id, f"LABEL_{predicted_id}")
-
-    return _canonical_sentiment(raw_label, predicted_id), round(confidence, 4)
-
-
-def _keyword_matches(text: str, keyword: str) -> bool:
-    """Match a complete word or phrase instead of a substring."""
-    pattern = rf"(?<!\w){re.escape(keyword.lower())}(?!\w)"
-    return re.search(pattern, text.lower()) is not None
-
-
-def extract_aspect(text: str) -> str:
-    """
-    Assign exactly one aspect to one comment.
-
-    The aspect with the highest keyword score is selected. Multi-word phrases
-    receive two points and single words receive one point. Priority order is
-    used only when scores are tied.
-    """
-    scores: dict[str, int] = {}
-
-    for aspect in ASPECT_PRIORITY:
-        matched = {
-            keyword.lower()
-            for keyword in ASPECTS[aspect]
-            if _keyword_matches(text, keyword)
-        }
-        scores[aspect] = sum(2 if " " in keyword else 1 for keyword in matched)
-
-    best_aspect = max(
-        ASPECT_PRIORITY,
-        key=lambda aspect: (
-            scores[aspect],
-            -ASPECT_PRIORITY.index(aspect),
-        ),
+    raw_label = id2label.get(
+        predicted_id,
+        f"LABEL_{predicted_id}",
     )
 
-    return best_aspect if scores[best_aspect] > 0 else "General"
+    sentiment = _canonical_sentiment(raw_label)
+    aspect = _aspect_from_joint_label(raw_label)
+
+    # If the trained label only represents sentiment, use the one-aspect
+    # keyword fallback so every comment still receives exactly one aspect.
+    if aspect is None:
+        aspect = extract_one_aspect(clean_text)
+
+    if sentiment is None:
+        raise ValueError(
+            "The predicted class label does not contain Positive, Neutral, "
+            f"or Negative. Predicted raw label: {raw_label!r}. "
+            "Check the id2label/classes saved inside the checkpoint."
+        )
+
+    return sentiment, aspect, round(confidence, 4), str(raw_label)
 
 
 def analyse_comment(text: str, classifier: dict) -> dict:
     """
-    Full processing flow:
-    preprocess -> trained mBERT prediction -> exactly one aspect.
+    Full application flow:
+    preprocess -> trained mBERT -> one sentiment -> one aspect.
     """
     clean = preprocess(text)
 
     if not clean:
         raise ValueError("The comment is empty after preprocessing.")
 
-    sentiment, confidence = predict_sentiment(clean, classifier)
-    selected_aspect = extract_aspect(clean)
+    sentiment, aspect, confidence, raw_label = predict_joint(
+        clean,
+        classifier,
+    )
 
-    # Keep 'aspects' as a one-item list so the existing app.py dashboard,
-    # history, table, and CSV code continue to work without major changes.
     return {
         "original": text,
         "clean": clean,
         "sentiment": sentiment,
         "confidence": confidence,
-        "aspects": [selected_aspect],
+
+        # Keep a one-item list because the existing app.py uses:
+        # for aspect in result["aspects"]
+        "aspects": [aspect],
+
+        # Useful for checking what the trained model actually predicted.
+        "raw_label": raw_label,
     }
