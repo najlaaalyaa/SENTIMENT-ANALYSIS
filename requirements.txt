@@ -6,3 +6,9 @@ plotly>=5.20.0
 scikit-learn>=1.4.0
 sentencepiece>=0.2.0
 protobuf>=4.25.0
+streamlit
+pandas
+plotly
+torch
+transformers
+huggingface_hub
