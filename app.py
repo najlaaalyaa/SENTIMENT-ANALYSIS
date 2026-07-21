@@ -203,6 +203,18 @@ st.markdown("""
 
 # ── Model and analysis functions are imported from model.py ───────────
 
+# ── Demo comment helper ────────────────────────────────────────
+DEMO_COMMENT = (
+    "Resepi ni sedap sangat! Bahan-bahannya mudah didapati. "
+    "Tapi cara masak dia agak susah sikit untuk orang baru."
+)
+
+
+def set_demo_comment():
+    """Place the demo sentence inside the comment text area."""
+    st.session_state.comment_input = DEMO_COMMENT
+
+
 # ── Session state ─────────────────────────────────────────────
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -242,11 +254,18 @@ if page == "🏠 Analyse Comment":
             label_visibility="collapsed",
             placeholder='e.g. "Resepi ni sedap sangat! Tapi masa memasak agak lama sikit."',
             height=150,
+            key="comment_input",
         )
-        demo_btn    = st.button("🎲 Try demo comment")
-        if demo_btn:
-            comment = "Resepi ni sedap sangat! Bahan-bahannya mudah didapati. Tapi cara masak dia agak susah sikit untuk orang baru."
-        analyse_btn = st.button("🔍 Analyse Comment", use_container_width=True)
+
+        st.button(
+            "🎲 Try demo comment",
+            on_click=set_demo_comment,
+        )
+
+        analyse_btn = st.button(
+            "🔍 Analyse Comment",
+            use_container_width=True,
+        )
 
     with col_out:
         if analyse_btn and comment.strip():
