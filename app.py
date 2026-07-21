@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 
-from model import load_model, analyse_comment
+from model import load_model, analyse_comment, preprocess
 
 # ── Page config ───────────────────────────────────────────────
 st.set_page_config(
@@ -215,6 +215,208 @@ def set_demo_comment():
     st.session_state.comment_input = DEMO_COMMENT
 
 
+# ── Batch data preprocessing ───────────────────────────────────
+def preprocess_dataframe(
+    dataframe: pd.DataFrame,
+    row_offset: int = 2,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """
+    Clean comments before batch prediction.
+
+    Steps:
+    1. Detect missing and blank comments.
+    2. Apply the same preprocess() function used by model.py.
+    3. Remove comments that become empty after cleaning.
+    4. Remove duplicate comments based on cleaned text.
+
+    row_offset=2 is used for CSV files because row 1 is the header.
+    row_offset=1 is used for pasted comments.
+    """
+    working = dataframe.copy().reset_index(drop=True)
+
+    if "comment" not in working.columns:
+        raise KeyError("The data must contain a column named 'comment'.")
+
+    valid_rows = []
+    skipped_rows = []
+    seen_clean_comments = set()
+
+    missing_or_blank = 0
+    empty_after_cleaning = 0
+    duplicates_removed = 0
+
+    for index, raw_value in working["comment"].items():
+        source_row = index + row_offset
+
+        # Missing cell such as NaN or None.
+        if pd.isna(raw_value):
+            missing_or_blank += 1
+            skipped_rows.append({
+                "Row": source_row,
+                "Comment": "",
+                "Cleaned Comment": "",
+                "Reason": "Missing or blank comment",
+            })
+            continue
+
+        original_comment = str(raw_value).strip()
+
+        # Empty string or whitespace-only string.
+        if not original_comment:
+            missing_or_blank += 1
+            skipped_rows.append({
+                "Row": source_row,
+                "Comment": "",
+                "Cleaned Comment": "",
+                "Reason": "Missing or blank comment",
+            })
+            continue
+
+        clean_comment = preprocess(original_comment)
+
+        # Emoji-only, URL-only, mention-only, or symbol-only comments may
+        # become empty after the preprocessing function removes them.
+        if not clean_comment.strip():
+            empty_after_cleaning += 1
+            skipped_rows.append({
+                "Row": source_row,
+                "Comment": original_comment,
+                "Cleaned Comment": "",
+                "Reason": "Empty after preprocessing",
+            })
+            continue
+
+        # Remove duplicate comments using their cleaned form, so comments
+        # with differences only in casing, links, mentions, or spacing are
+        # treated as duplicates.
+        duplicate_key = clean_comment.casefold()
+
+        if duplicate_key in seen_clean_comments:
+            duplicates_removed += 1
+            skipped_rows.append({
+                "Row": source_row,
+                "Comment": original_comment,
+                "Cleaned Comment": clean_comment,
+                "Reason": "Duplicate cleaned comment",
+            })
+            continue
+
+        seen_clean_comments.add(duplicate_key)
+
+        valid_rows.append({
+            "Source Row": source_row,
+            "original_comment": original_comment,
+            "clean_comment": clean_comment,
+        })
+
+    prepared_df = pd.DataFrame(
+        valid_rows,
+        columns=["Source Row", "original_comment", "clean_comment"],
+    )
+
+    skipped_df = pd.DataFrame(
+        skipped_rows,
+        columns=["Row", "Comment", "Cleaned Comment", "Reason"],
+    )
+
+    statistics = {
+        "Original comments": len(working),
+        "Valid comments": len(prepared_df),
+        "Missing or blank": missing_or_blank,
+        "Empty after cleaning": empty_after_cleaning,
+        "Duplicates removed": duplicates_removed,
+        "Total removed": len(skipped_df),
+    }
+
+    return prepared_df, skipped_df, statistics
+
+
+def show_preprocessing_summary(
+    prepared_df: pd.DataFrame,
+    skipped_df: pd.DataFrame,
+    statistics: dict,
+    key_prefix: str,
+) -> None:
+    """Display preprocessing totals, a preview, and download controls."""
+    st.markdown("#### 🧹 Data preprocessing summary")
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    col1.metric(
+        "Original",
+        statistics["Original comments"],
+    )
+    col2.metric(
+        "Valid",
+        statistics["Valid comments"],
+    )
+    col3.metric(
+        "Blank removed",
+        statistics["Missing or blank"],
+    )
+    col4.metric(
+        "Invalid removed",
+        statistics["Empty after cleaning"],
+    )
+    col5.metric(
+        "Duplicates",
+        statistics["Duplicates removed"],
+    )
+
+    if not prepared_df.empty:
+        st.markdown("**Preview after preprocessing:**")
+
+        preview = prepared_df[
+            ["Source Row", "original_comment", "clean_comment"]
+        ].head(20).copy()
+
+        preview.columns = [
+            "Source Row",
+            "Original Comment",
+            "Cleaned Comment",
+        ]
+
+        st.dataframe(
+            preview,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.download_button(
+            "⬇️ Download preprocessed comments",
+            data=prepared_df.to_csv(
+                index=False
+            ).encode("utf-8-sig"),
+            file_name="preprocessed_comments.csv",
+            mime="text/csv",
+            key=f"{key_prefix}_download_preprocessed",
+        )
+    else:
+        st.warning(
+            "No valid comments remain after preprocessing."
+        )
+
+    if not skipped_df.empty:
+        with st.expander(
+            f"View {len(skipped_df)} removed comments"
+        ):
+            st.dataframe(
+                skipped_df,
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            st.download_button(
+                "⬇️ Download removed comments",
+                data=skipped_df.to_csv(
+                    index=False
+                ).encode("utf-8-sig"),
+                file_name="removed_comments.csv",
+                mime="text/csv",
+                key=f"{key_prefix}_download_removed",
+            )
+
+
 # ── Session state ─────────────────────────────────────────────
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -334,67 +536,448 @@ if page == "🏠 Analyse Comment":
 # ═══════════════════════════════════════════════════════════════
 elif page == "📂 Batch Analysis":
     st.markdown("### 📂 Batch Comment Analysis")
-    st.caption("Upload a CSV file of YouTube comments for bulk analysis.")
+    st.caption(
+        "Upload or paste comments. The app cleans the data before "
+        "sending valid comments to the trained model."
+    )
 
-    tab1, tab2 = st.tabs(["📤 Upload CSV", "✏️ Paste Comments"])
+    tab1, tab2 = st.tabs([
+        "📤 Upload CSV",
+        "✏️ Paste Comments",
+    ])
 
+    # ----------------------------------------------------------
+    # TAB 1: CSV UPLOAD
+    # ----------------------------------------------------------
     with tab1:
-        st.markdown("**CSV must have a column named `comment`.**")
-        uploaded = st.file_uploader("Upload CSV", type=["csv"])
-        if uploaded:
-            df = pd.read_csv(uploaded)
-            if "comment" not in df.columns:
-                st.error("CSV must contain a column named `comment`.")
-            else:
-                st.success(f"Loaded {len(df)} comments.")
-                st.dataframe(df.head(5), use_container_width=True, hide_index=True)
-                if st.button("🚀 Run Batch Analysis"):
-                    clf = load_model()
-                    results, bar = [], st.progress(0, text="Analysing…")
-                    for i, row in df.iterrows():
-                        results.append(analyse_comment(str(row["comment"]), clf))
-                        bar.progress((i+1)/len(df), text=f"Analysing {i+1}/{len(df)}…")
-                    bar.empty()
-                    st.session_state["batch_results"] = pd.DataFrame(results)
-                    st.success("Done!")
+        st.markdown(
+            "**The CSV file must contain a column named `comment`.**"
+        )
+        st.caption(
+            "The app removes missing, blank, emoji-only, URL-only, "
+            "mention-only, symbol-only, and duplicate comments."
+        )
 
+        uploaded = st.file_uploader(
+            "Upload CSV",
+            type=["csv"],
+            key="batch_csv_uploader",
+        )
+
+        if uploaded is not None:
+            try:
+                source_df = pd.read_csv(uploaded)
+            except UnicodeDecodeError:
+                uploaded.seek(0)
+                source_df = pd.read_csv(
+                    uploaded,
+                    encoding="latin-1",
+                )
+            except Exception as error:
+                st.error(f"Unable to read the CSV file: {error}")
+                source_df = None
+
+            if source_df is not None:
+                if "comment" not in source_df.columns:
+                    st.error(
+                        "CSV must contain a column named `comment`. "
+                        f"Available columns: {list(source_df.columns)}"
+                    )
+                else:
+                    prepared_df, initial_skipped_df, stats = (
+                        preprocess_dataframe(
+                            source_df,
+                            row_offset=2,
+                        )
+                    )
+
+                    st.success(
+                        f"Loaded {len(source_df)} original comments."
+                    )
+
+                    show_preprocessing_summary(
+                        prepared_df,
+                        initial_skipped_df,
+                        stats,
+                        key_prefix="csv",
+                    )
+
+                    if st.button(
+                        "🚀 Run Batch Analysis",
+                        key="run_csv_batch",
+                        disabled=prepared_df.empty,
+                    ):
+                        try:
+                            clf = load_model()
+                        except Exception as error:
+                            st.error(
+                                f"Unable to load the trained model: {error}"
+                            )
+                        else:
+                            results = []
+                            prediction_skipped = []
+
+                            total = len(prepared_df)
+
+                            bar = st.progress(
+                                0,
+                                text="Starting analysis…",
+                            )
+
+                            for position, (_, row) in enumerate(
+                                prepared_df.iterrows(),
+                                start=1,
+                            ):
+                                try:
+                                    prediction = analyse_comment(
+                                        row["original_comment"],
+                                        clf,
+                                    )
+
+                                    prediction["source_row"] = int(
+                                        row["Source Row"]
+                                    )
+                                    results.append(prediction)
+
+                                except Exception as error:
+                                    prediction_skipped.append({
+                                        "Row": int(row["Source Row"]),
+                                        "Comment": row["original_comment"],
+                                        "Cleaned Comment": row["clean_comment"],
+                                        "Reason": (
+                                            f"Prediction error: {error}"
+                                        ),
+                                    })
+
+                                bar.progress(
+                                    position / total,
+                                    text=(
+                                        f"Analysing "
+                                        f"{position}/{total}…"
+                                    ),
+                                )
+
+                            bar.empty()
+
+                            result_df = pd.DataFrame(results)
+
+                            all_skipped_df = pd.concat(
+                                [
+                                    initial_skipped_df,
+                                    pd.DataFrame(
+                                        prediction_skipped,
+                                        columns=[
+                                            "Row",
+                                            "Comment",
+                                            "Cleaned Comment",
+                                            "Reason",
+                                        ],
+                                    ),
+                                ],
+                                ignore_index=True,
+                            )
+
+                            if not result_df.empty:
+                                st.session_state[
+                                    "batch_results"
+                                ] = result_df
+                            else:
+                                st.session_state.pop(
+                                    "batch_results",
+                                    None,
+                                )
+
+                            st.session_state[
+                                "skipped_comments"
+                            ] = all_skipped_df
+
+                            st.success(
+                                f"Completed: {len(result_df)} analysed, "
+                                f"{len(all_skipped_df)} removed or skipped."
+                            )
+
+                            if not all_skipped_df.empty:
+                                with st.expander(
+                                    "View all removed or skipped comments"
+                                ):
+                                    st.dataframe(
+                                        all_skipped_df,
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
+
+                                    st.download_button(
+                                        "⬇️ Download skipped comments CSV",
+                                        data=all_skipped_df.to_csv(
+                                            index=False
+                                        ).encode("utf-8-sig"),
+                                        file_name=(
+                                            "skipped_comments.csv"
+                                        ),
+                                        mime="text/csv",
+                                        key="csv_prediction_skipped",
+                                    )
+
+    # ----------------------------------------------------------
+    # TAB 2: PASTED COMMENTS
+    # ----------------------------------------------------------
     with tab2:
         pasted = st.text_area(
-            "Paste one comment per line:", height=200,
-            placeholder="Sedap sangat resepi ni!\nLangkah memasak agak susah sikit.",
+            "Paste one comment per line:",
+            height=220,
+            placeholder=(
+                "Sedap sangat resepi ni!\n"
+                "Langkah memasak agak susah sikit.\n"
+                "👏👏👏"
+            ),
+            key="pasted_batch_comments",
         )
-        if st.button("🚀 Analyse Pasted Comments"):
-            lines = [l.strip() for l in pasted.splitlines() if l.strip()]
-            if lines:
-                clf = load_model()
-                results, bar = [], st.progress(0)
-                for i, line in enumerate(lines):
-                    results.append(analyse_comment(line, clf))
-                    bar.progress((i+1)/len(lines))
-                bar.empty()
-                st.session_state["batch_results"] = pd.DataFrame(results)
-            else:
-                st.warning("Please paste at least one comment.")
 
+        pasted_lines = pasted.splitlines()
+
+        if any(line.strip() for line in pasted_lines):
+            pasted_source_df = pd.DataFrame({
+                "comment": pasted_lines
+            })
+
+            pasted_prepared_df, pasted_skipped_df, pasted_stats = (
+                preprocess_dataframe(
+                    pasted_source_df,
+                    row_offset=1,
+                )
+            )
+
+            show_preprocessing_summary(
+                pasted_prepared_df,
+                pasted_skipped_df,
+                pasted_stats,
+                key_prefix="pasted",
+            )
+        else:
+            pasted_prepared_df = pd.DataFrame(
+                columns=[
+                    "Source Row",
+                    "original_comment",
+                    "clean_comment",
+                ]
+            )
+            pasted_skipped_df = pd.DataFrame(
+                columns=[
+                    "Row",
+                    "Comment",
+                    "Cleaned Comment",
+                    "Reason",
+                ]
+            )
+
+        if st.button(
+            "🚀 Analyse Pasted Comments",
+            key="run_pasted_batch",
+            disabled=pasted_prepared_df.empty,
+        ):
+            try:
+                clf = load_model()
+            except Exception as error:
+                st.error(
+                    f"Unable to load the trained model: {error}"
+                )
+            else:
+                results = []
+                prediction_skipped = []
+                total = len(pasted_prepared_df)
+
+                bar = st.progress(
+                    0,
+                    text="Starting analysis…",
+                )
+
+                for position, (_, row) in enumerate(
+                    pasted_prepared_df.iterrows(),
+                    start=1,
+                ):
+                    try:
+                        prediction = analyse_comment(
+                            row["original_comment"],
+                            clf,
+                        )
+                        prediction["source_row"] = int(
+                            row["Source Row"]
+                        )
+                        results.append(prediction)
+                    except Exception as error:
+                        prediction_skipped.append({
+                            "Row": int(row["Source Row"]),
+                            "Comment": row["original_comment"],
+                            "Cleaned Comment": row["clean_comment"],
+                            "Reason": f"Prediction error: {error}",
+                        })
+
+                    bar.progress(
+                        position / total,
+                        text=(
+                            f"Analysing {position}/{total}…"
+                        ),
+                    )
+
+                bar.empty()
+
+                result_df = pd.DataFrame(results)
+
+                all_skipped_df = pd.concat(
+                    [
+                        pasted_skipped_df,
+                        pd.DataFrame(
+                            prediction_skipped,
+                            columns=[
+                                "Row",
+                                "Comment",
+                                "Cleaned Comment",
+                                "Reason",
+                            ],
+                        ),
+                    ],
+                    ignore_index=True,
+                )
+
+                if not result_df.empty:
+                    st.session_state["batch_results"] = result_df
+                else:
+                    st.session_state.pop(
+                        "batch_results",
+                        None,
+                    )
+
+                st.session_state[
+                    "skipped_comments"
+                ] = all_skipped_df
+
+                st.success(
+                    f"Completed: {len(result_df)} analysed, "
+                    f"{len(all_skipped_df)} removed or skipped."
+                )
+
+    # ----------------------------------------------------------
+    # BATCH RESULTS
+    # ----------------------------------------------------------
     if "batch_results" in st.session_state:
         out = st.session_state["batch_results"]
-        st.markdown("---")
-        st.markdown(f"#### Results — {len(out)} comments")
-        pos = (out["sentiment"]=="Positive").sum()
-        neu = (out["sentiment"]=="Neutral").sum()
-        neg = (out["sentiment"]=="Negative").sum()
-        c1,c2,c3 = st.columns(3)
-        c1.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#1B4D1B'>{pos}</div><div class='metric-label'>Positive</div></div>", unsafe_allow_html=True)
-        c2.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#854F0B'>{neu}</div><div class='metric-label'>Neutral</div></div>", unsafe_allow_html=True)
-        c3.markdown(f"<div class='metric-card'><div class='metric-num' style='color:#A32D2D'>{neg}</div><div class='metric-label'>Negative</div></div>", unsafe_allow_html=True)
-        st.markdown("")
-        display = out[["original","sentiment","confidence","aspects"]].copy()
-        display.columns = ["Comment","Sentiment","Confidence","Aspects"]
-        display["Confidence"] = display["Confidence"].apply(lambda x: f"{x:.0%}")
-        display["Aspects"]    = display["Aspects"].apply(lambda x: ", ".join(x))
-        st.dataframe(display, use_container_width=True, height=300, hide_index=True)
-        st.download_button("⬇️ Download results CSV", data=out.to_csv(index=False).encode("utf-8"),
-                           file_name="sentiment_results.csv", mime="text/csv")
+
+        if not out.empty:
+            st.markdown("---")
+            st.markdown(
+                f"#### Results — {len(out)} comments"
+            )
+
+            positive_count = (
+                out["sentiment"] == "Positive"
+            ).sum()
+            neutral_count = (
+                out["sentiment"] == "Neutral"
+            ).sum()
+            negative_count = (
+                out["sentiment"] == "Negative"
+            ).sum()
+
+            col1, col2, col3 = st.columns(3)
+
+            col1.markdown(
+                f"<div class='metric-card'>"
+                f"<div class='metric-num' "
+                f"style='color:#1B4D1B'>"
+                f"{positive_count}</div>"
+                f"<div class='metric-label'>Positive</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            col2.markdown(
+                f"<div class='metric-card'>"
+                f"<div class='metric-num' "
+                f"style='color:#854F0B'>"
+                f"{neutral_count}</div>"
+                f"<div class='metric-label'>Neutral</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            col3.markdown(
+                f"<div class='metric-card'>"
+                f"<div class='metric-num' "
+                f"style='color:#A32D2D'>"
+                f"{negative_count}</div>"
+                f"<div class='metric-label'>Negative</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            st.markdown("")
+
+            display_columns = [
+                "original",
+                "clean",
+                "sentiment",
+                "confidence",
+                "aspects",
+            ]
+
+            if "source_row" in out.columns:
+                display_columns.insert(0, "source_row")
+
+            display = out[display_columns].copy()
+
+            rename_map = {
+                "source_row": "Source Row",
+                "original": "Original Comment",
+                "clean": "Cleaned Comment",
+                "sentiment": "Sentiment",
+                "confidence": "Confidence",
+                "aspects": "Aspect",
+            }
+
+            display = display.rename(columns=rename_map)
+
+            display["Confidence"] = display[
+                "Confidence"
+            ].apply(lambda value: f"{value:.2%}")
+
+            display["Aspect"] = display[
+                "Aspect"
+            ].apply(
+                lambda values: (
+                    values[0]
+                    if isinstance(values, list) and values
+                    else str(values)
+                )
+            )
+
+            st.dataframe(
+                display,
+                use_container_width=True,
+                height=360,
+                hide_index=True,
+            )
+
+            export_df = out.copy()
+
+            export_df["aspects"] = export_df[
+                "aspects"
+            ].apply(
+                lambda values: (
+                    values[0]
+                    if isinstance(values, list) and values
+                    else str(values)
+                )
+            )
+
+            st.download_button(
+                "⬇️ Download analysis results CSV",
+                data=export_df.to_csv(
+                    index=False
+                ).encode("utf-8-sig"),
+                file_name="sentiment_results.csv",
+                mime="text/csv",
+                key="download_batch_results",
+            )
 
 # ═══════════════════════════════════════════════════════════════
 # PAGE 3 — DASHBOARD  (Confidence histogram & Aspect×Sentiment heatmap removed)
@@ -461,7 +1044,7 @@ elif page == "ℹ️ About":
     st.markdown("### ℹ️ About This System")
     st.markdown("""
     **Sentiment Analysis of YouTube Comments**
-    — Nur Najlaa' Alyaa' Binti Roslan (2023436326), UiTM, July 2026
+    — Nur Najlaa' Alyaa' Binti Roslan (2023436326), UiTM, January 2026
 
     ---
 
@@ -474,7 +1057,7 @@ elif page == "ℹ️ About":
     | UI Framework | Streamlit |
     | Sentiment Model | Custom fine-tuned mBERT (`nvjlaa/mBERT`) |
     | Aspect Extraction | Keyword-based (Malay cooking vocabulary) |
-    | Data Collection | Apify YouTube Comments Scraper |
+    | Data Collection | Apify YouTube Comments Scraper + YouTube Data API |
     | Visualisation | Plotly |
 
     #### Sentiment labels
