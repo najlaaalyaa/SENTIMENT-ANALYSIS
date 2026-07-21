@@ -3,7 +3,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
-import re
+
+from model import load_model, analyse_comment
 
 # ── Page config ───────────────────────────────────────────────
 st.set_page_config(
@@ -200,83 +201,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ── Lazy imports ──────────────────────────────────────────────
-@st.cache_resource(show_spinner="Loading mBERT model…")
-def load_model():
-    from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
-    MODEL_NAME = "nlptown/bert-base-multilingual-uncased-sentiment"
-    tokenizer  = AutoTokenizer.from_pretrained(MODEL_NAME)
-    model      = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
-    classifier = pipeline(
-        "text-classification",
-        model=model,
-        tokenizer=tokenizer,
-        device=-1,
-        truncation=True,
-        max_length=512,
-    )
-    return classifier
-
-# ── Aspect dictionary ─────────────────────────────────────────
-ASPECTS = {
-    "Taste / Rasa": [
-        "sedap","lazat","lezat","rasa","masin","manis","masam","pahit","pedas",
-        "tawar","enak","nyaman","lemak","taste","delicious","flavour","flavor",
-        "yummy","tasteless","bland","sweet","salty","sour","spicy","bitter",
-    ],
-    "Ingredients / Bahan": [
-        "bahan","sukatan","resepi","resipi","ramuan","ganti","kurang","lebih",
-        "ingredient","recipe","substitute","measurement","quantity","amount",
-        "portion","spice","rempah","santan","minyak","garam","gula","tepung",
-    ],
-    "Cooking Steps / Langkah": [
-        "cara","langkah","kaedah","teknik","proses","mudah","susah","sukar",
-        "method","step","process","easy","hard","difficult","simple","follow",
-        "instructions","tutorial","guide","demo","ikut","faham","jelas",
-    ],
-    "Time / Masa": [
-        "lama","cepat","lambat","minit","jam","masa","duration","quick",
-        "slow","fast","long","short","minute","hour","time","tempoh",
-    ],
-    "Presentation / Persembahan": [
-        "cantik","comel","menarik","kemas","presentation","plating","look",
-        "beautiful","nice","neat","video","quality","visual","gambar","foto",
-    ],
-    "Texture / Tekstur": [
-        "lembut","keras","rangup","gebu","moist","crispy","crunchy","soft",
-        "hard","fluffy","dry","wet","texture","tekstur","kenyal","garing",
-    ],
-}
-
-def map_label(label: str, score: float):
-    star = int(label.split()[0])
-    if star >= 4:   sentiment = "Positive"
-    elif star == 3: sentiment = "Neutral"
-    else:           sentiment = "Negative"
-    return sentiment, round(score, 3)
-
-def extract_aspects(text: str) -> list:
-    text_lower = text.lower()
-    found = [a for a, kws in ASPECTS.items() if any(kw in text_lower for kw in kws)]
-    return found if found else ["General"]
-
-def preprocess(text: str) -> str:
-    text = re.sub(r"http\S+|www\S+", "", text)
-    text = re.sub(r"@\w+", "", text)
-    text = re.sub(r"[^\w\s',.!?]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-def analyse_comment(text: str, classifier) -> dict:
-    clean  = preprocess(text)
-    result = classifier(clean[:512])[0]
-    sentiment, confidence = map_label(result["label"], result["score"])
-    return {
-        "original":   text,
-        "clean":      clean,
-        "sentiment":  sentiment,
-        "confidence": confidence,
-        "aspects":    extract_aspects(clean),
-    }
+# ── Model and analysis functions are imported from model.py ───────────
 
 # ── Session state ─────────────────────────────────────────────
 if "history" not in st.session_state:
@@ -294,7 +219,7 @@ with st.sidebar:
     )
     st.markdown("---")
     st.markdown(
-        "<small>Powered by mBERT<br>(bert-base-multilingual-uncased-sentiment)"
+        "<small>Powered by custom fine-tuned mBERT<br>(Hugging Face: nvjlaa/mBERT)"
         "<br><br>UiTM Final Year Project 2026"
         "<br>Nur Najlaa' Alyaa' Binti Roslan</small>",
         unsafe_allow_html=True,
@@ -528,23 +453,27 @@ elif page == "ℹ️ About":
     | Component | Technology |
     |---|---|
     | UI Framework | Streamlit |
-    | Sentiment Model | mBERT (`bert-base-multilingual-uncased-sentiment`) |
+    | Sentiment Model | Custom fine-tuned mBERT (`nvjlaa/mBERT`) |
     | Aspect Extraction | Keyword-based (Malay cooking vocabulary) |
     | Data Collection | Apify YouTube Comments Scraper + YouTube Data API |
     | Visualisation | Plotly |
 
     #### Sentiment labels
-    | Label | mBERT Stars | Description |
-    |---|---|---|
-    | ✅ Positive | 4–5 stars | Viewer liked the video / recipe |
-    | 😐 Neutral  | 3 stars   | Mixed or no clear opinion |
-    | ❌ Negative | 1–2 stars | Viewer disliked or criticised |
+    | Label | Description |
+    |---|---|
+    | ✅ Positive | Viewer liked the video or recipe |
+    | 😐 Neutral | Mixed or no clear opinion |
+    | ❌ Negative | Viewer disliked or criticised |
 
     #### Cooking aspects detected
-    - **Taste / Rasa** — sedap, lazat, pedas, manis …
-    - **Ingredients / Bahan** — resepi, sukatan, rempah …
-    - **Cooking Steps / Langkah** — cara, langkah, mudah, susah …
-    - **General** — lama, cepat, minit, cantik, menarik, video, lembut, rangup, gebu …
+    Each comment is assigned to exactly one aspect:
+    - **Taste / Rasa**
+    - **Ingredients / Bahan**
+    - **Cooking Steps / Langkah**
+    - **Time / Masa**
+    - **Presentation / Persembahan**
+    - **Texture / Tekstur**
+    - **General** when no aspect keyword is found
 
     #### How to run locally
     ```bash
@@ -552,5 +481,3 @@ elif page == "ℹ️ About":
     streamlit run app.py
     ```
     """)
-
-
