@@ -23,32 +23,66 @@ from transformers import (
 HF_REPO_ID = "nvjlaa/mBERT"
 HF_MODEL_FILENAME = "mbert_aspect_sentiment_model.pkl"
 
-# These are used only when the trained output label contains sentiment
-# but does not contain an aspect name.
+# The system uses exactly four cooking aspects:
+# 1. General
+# 2. Ingredients / Bahan
+# 3. Taste / Rasa
+# 4. Cooking Steps / Langkah
+#
+# Time, presentation, texture, and comments without a specific cooking
+# aspect are grouped under General.
 ASPECTS = {
     "Taste / Rasa": [
-        "sedap", "lazat", "lezat", "rasa", "masin", "manis", "masam",
-        "pahit", "pedas", "tawar", "enak", "nyaman", "lemak", "taste",
-        "delicious", "flavour", "flavor", "yummy", "tasteless", "bland",
-        "sweet", "salty", "sour", "spicy", "bitter", "kurang sedap",
-        "tak sedap", "sangat sedap", "memang sedap", "sedap sangat",
+        "sedap", "lazat", "lezat", "rasa", "rasanya", "masin", "manis",
+        "masam", "pahit", "pedas", "tawar", "enak", "nyaman", "lemak",
+        "taste", "tastes", "tasty", "delicious", "flavour", "flavor",
+        "yummy", "tasteless", "bland", "sweet", "salty", "sour", "spicy",
+        "bitter", "kurang sedap", "tak sedap", "tidak sedap",
+        "sangat sedap", "memang sedap", "sedap sangat",
     ],
     "Ingredients / Bahan": [
-        "bahan", "sukatan", "resepi", "resipi", "ramuan", "ganti",
-        "ingredient", "ingredients", "recipe", "substitute", "measurement",
-        "quantity", "amount", "portion", "spice", "rempah", "santan",
-        "minyak", "garam", "gula", "tepung", "sayur", "daging", "ayam",
-        "ikan", "udang", "telur",
+        "bahan", "bahan-bahan", "sukatan", "resepi", "resipi", "ramuan",
+        "ganti", "gantikan", "ingredient", "ingredients", "recipe",
+        "substitute", "measurement", "quantity", "amount", "portion",
+        "spice", "rempah", "santan", "minyak", "garam", "gula", "tepung",
+        "sayur", "daging", "ayam", "ikan", "udang", "telur", "bawang",
+        "cili", "sos", "kicap", "susu", "mentega", "marjerin", "keju",
     ],
     "Cooking Steps / Langkah": [
         "cara", "langkah", "kaedah", "teknik", "proses", "mudah", "susah",
-        "sukar", "method", "step", "steps", "process", "easy", "hard",
-        "difficult", "simple", "follow", "instructions", "tutorial", "guide",
-        "demo", "ikut", "faham", "jelas", "peringkat", "prosedur", "arahan",
+        "sukar", "senang", "method", "step", "steps", "process", "easy",
+        "hard", "difficult", "simple", "follow", "instructions",
+        "instruction", "tutorial", "guide", "demo", "ikut", "faham",
+        "jelas", "peringkat", "prosedur", "arahan", "masak", "memasak",
+        "goreng", "menggoreng", "rebus", "merebus", "bakar", "membakar",
+        "kukus", "mengukus", "kacau", "gaul", "campur", "potong",
     ],
-   
+    "General": [
+        # Time-related feedback
+        "lama", "cepat", "lambat", "minit", "jam", "masa", "duration",
+        "quick", "slow", "fast", "long", "short", "minute", "hour",
+        "time", "tempoh", "sekejap", "sebentar", "berapa lama",
+
+        # Presentation or video-related feedback
+        "cantik", "comel", "menarik", "kemas", "presentation", "plating",
+        "look", "beautiful", "nice", "neat", "video", "quality", "visual",
+        "gambar", "foto", "warna", "colour", "color", "hiasan", "garnish",
+        "audio", "suara", "editing", "edit", "kamera", "camera",
+
+        # Texture-related feedback is grouped under General
+        "lembut", "keras", "rangup", "gebu", "moist", "crispy", "crunchy",
+        "soft", "fluffy", "dry", "wet", "texture", "tekstur", "kenyal",
+        "garing", "berderai", "halus", "kasar", "licin",
+
+        # Broad reactions and non-specific feedback
+        "bagus", "terbaik", "best", "good", "great", "amazing", "hebat",
+        "suka", "love", "tak suka", "tidak suka", "boring", "bosan",
+        "terima kasih", "thank you", "thanks", "mantap", "wow",
+    ],
 }
 
+# Specific aspects take priority when scores are tied.
+# General is deliberately placed last.
 ASPECT_PRIORITY = [
     "Taste / Rasa",
     "Ingredients / Bahan",
@@ -56,18 +90,36 @@ ASPECT_PRIORITY = [
     "General",
 ]
 
+# Map labels saved by the trained model into the four permitted aspects.
+# Older labels such as Time, Presentation, or Texture are merged into General.
 ASPECT_ALIASES = {
     "taste": "Taste / Rasa",
     "rasa": "Taste / Rasa",
+
     "ingredient": "Ingredients / Bahan",
     "ingredients": "Ingredients / Bahan",
     "bahan": "Ingredients / Bahan",
+
     "cooking step": "Cooking Steps / Langkah",
     "cooking steps": "Cooking Steps / Langkah",
+    "cookingsteps": "Cooking Steps / Langkah",
     "step": "Cooking Steps / Langkah",
     "steps": "Cooking Steps / Langkah",
     "langkah": "Cooking Steps / Langkah",
+    "method": "Cooking Steps / Langkah",
+    "cara": "Cooking Steps / Langkah",
+
     "general": "General",
+    "other": "General",
+    "others": "General",
+
+    # Merge unsupported/older aspects into General.
+    "time": "General",
+    "masa": "General",
+    "presentation": "General",
+    "persembahan": "General",
+    "texture": "General",
+    "tekstur": "General",
 }
 
 
@@ -460,10 +512,15 @@ def _keyword_matches(text: str, keyword: str) -> bool:
 
 def extract_one_aspect(text: str) -> str:
     """
-    Return exactly one aspect.
+    Assign exactly one of the four permitted aspects:
 
-    This is used as a fallback when the trained output label does not include
-    an aspect. The aspect with the highest keyword score is selected.
+    - Taste / Rasa
+    - Ingredients / Bahan
+    - Cooking Steps / Langkah
+    - General
+
+    The aspect with the highest keyword score is selected. Multi-word
+    phrases receive two points. If there is no match, General is returned.
     """
     scores: dict[str, int] = {}
 
@@ -487,7 +544,10 @@ def extract_one_aspect(text: str) -> str:
         ),
     )
 
-    return best_aspect if scores[best_aspect] > 0 else "General"
+    if scores[best_aspect] == 0:
+        return "General"
+
+    return best_aspect
 
 
 def _canonical_sentiment(label: str) -> str | None:
@@ -507,7 +567,17 @@ def _canonical_sentiment(label: str) -> str | None:
 
 
 def _aspect_from_joint_label(label: str) -> str | None:
-    """Extract an aspect name from a joint aspect-sentiment class label."""
+    """
+    Extract one of the four supported aspects from a joint model label.
+
+    Examples:
+        Taste_Positive       -> Taste / Rasa
+        Ingredients_Negative -> Ingredients / Bahan
+        Steps_Neutral        -> Cooking Steps / Langkah
+        General_Positive     -> General
+
+    Labels containing Time, Presentation, or Texture are merged into General.
+    """
     cleaned = str(label).strip().lower()
     cleaned = re.sub(
         r"\b(positive|neutral|negative|pos|neu|neg)\b",
@@ -517,7 +587,6 @@ def _aspect_from_joint_label(label: str) -> str | None:
     cleaned = re.sub(r"[_|:/\\\-]+", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
-    # Prefer longer aliases first.
     for alias in sorted(ASPECT_ALIASES, key=len, reverse=True):
         if re.search(
             rf"(?<!\w){re.escape(alias)}(?!\w)",
@@ -573,6 +642,16 @@ def predict_joint(
     # keyword fallback so every comment still receives exactly one aspect.
     if aspect is None:
         aspect = extract_one_aspect(clean_text)
+
+    # Final guard: the application must never return an unsupported aspect.
+    allowed_aspects = {
+        "General",
+        "Ingredients / Bahan",
+        "Taste / Rasa",
+        "Cooking Steps / Langkah",
+    }
+    if aspect not in allowed_aspects:
+        aspect = "General"
 
     if sentiment is None:
         raise ValueError(
