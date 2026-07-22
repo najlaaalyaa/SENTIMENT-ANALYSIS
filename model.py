@@ -46,30 +46,14 @@ ASPECTS = {
         "difficult", "simple", "follow", "instructions", "tutorial", "guide",
         "demo", "ikut", "faham", "jelas", "peringkat", "prosedur", "arahan",
     ],
-    "Time / Masa": [
-        "lama", "cepat", "lambat", "minit", "jam", "masa", "duration",
-        "quick", "slow", "fast", "long", "short", "minute", "hour",
-        "time", "tempoh", "sekejap", "sebentar", "berapa lama",
-    ],
-    "Presentation / Persembahan": [
-        "cantik", "comel", "menarik", "kemas", "presentation", "plating",
-        "look", "beautiful", "nice", "neat", "video", "quality", "visual",
-        "gambar", "foto", "warna", "colour", "color", "hiasan", "garnish",
-    ],
-    "Texture / Tekstur": [
-        "lembut", "keras", "rangup", "gebu", "moist", "crispy", "crunchy",
-        "soft", "fluffy", "dry", "wet", "texture", "tekstur", "kenyal",
-        "garing", "berderai", "halus", "kasar", "licin",
-    ],
+   
 }
 
 ASPECT_PRIORITY = [
     "Taste / Rasa",
     "Ingredients / Bahan",
     "Cooking Steps / Langkah",
-    "Time / Masa",
-    "Presentation / Persembahan",
-    "Texture / Tekstur",
+    "General",
 ]
 
 ASPECT_ALIASES = {
@@ -83,12 +67,6 @@ ASPECT_ALIASES = {
     "step": "Cooking Steps / Langkah",
     "steps": "Cooking Steps / Langkah",
     "langkah": "Cooking Steps / Langkah",
-    "time": "Time / Masa",
-    "masa": "Time / Masa",
-    "presentation": "Presentation / Persembahan",
-    "persembahan": "Presentation / Persembahan",
-    "texture": "Texture / Tekstur",
-    "tekstur": "Texture / Tekstur",
     "general": "General",
 }
 
