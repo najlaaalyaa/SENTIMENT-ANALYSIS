@@ -205,8 +205,7 @@ st.markdown("""
 
 # ── Demo comment helper ────────────────────────────────────────
 DEMO_COMMENT = (
-    "Resepi ni sedap sangat! Bahan-bahannya mudah didapati. "
-    "Tapi cara masak dia agak susah sikit untuk orang baru."
+    "Resepi ni sangat sedap dan rasanya memang terbaik!"
 )
 
 
@@ -494,7 +493,7 @@ if page == "🏠 Analyse Comment":
                         Confidence: {res['confidence']:.2%}</div></div>""",
                         unsafe_allow_html=True,
                     )
-                    st.markdown("**Detected cooking aspects:**")
+                    st.markdown("**Detected cooking aspect:**")
                     aspects_html = "".join(f'<span class="aspect-tag">{a}</span>' for a in res["aspects"])
                     st.markdown(aspects_html, unsafe_allow_html=True)
                     st.markdown("<br>**Preprocessed text:**", unsafe_allow_html=True)
@@ -1019,7 +1018,7 @@ elif page == "📊 Dashboard":
             st.plotly_chart(pie, use_container_width=True)
 
         with col_r:
-            st.markdown("**Top detected aspects**")
+            st.markdown("**Detected aspect distribution**")
             aspect_counts = {}
             for row in all_data:
                 for a in row.get("aspects", []):
@@ -1072,6 +1071,9 @@ elif page == "ℹ️ About":
     - **Taste / Rasa**
     - **Ingredients / Bahan**
     - **Cooking Steps / Langkah**
+    - **Time / Masa**
+    - **Presentation / Persembahan**
+    - **Texture / Tekstur**
     - **General** when no aspect keyword is found
 
     #### How to run locally
