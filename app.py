@@ -1072,9 +1072,6 @@ elif page == "ℹ️ About":
     - **Taste / Rasa**
     - **Ingredients / Bahan**
     - **Cooking Steps / Langkah**
-    - **Time / Masa**
-    - **Presentation / Persembahan**
-    - **Texture / Tekstur**
     - **General** when no aspect keyword is found
 
     #### How to run locally
