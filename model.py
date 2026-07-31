@@ -1,8 +1,3 @@
-"""
-model.py — Load the trained joint mBERT aspect-sentiment model
-from Hugging Face and analyse one comment at a time.
-"""
-
 import os
 import pickle
 import re
